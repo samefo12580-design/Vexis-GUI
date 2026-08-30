@@ -1,46 +1,3 @@
---[[
-    Library.lua - UI Framework ฉบับสมบูรณ์ สำหรับ Roblox
-    ===============================================================
-    วิธีใช้เบื้องต้น:
-        local Library = loadstring(game:HttpGet("URL_ของไฟล์นี้"))()
-        local Window = Library:CreateWindow({
-            Title = "ชื่อหน้าต่าง",
-            ToggleKey = Enum.KeyCode.RightShift, -- กดเพื่อซ่อน/แสดงหน้าต่าง (ไม่ใส่ก็ได้)
-            ConfigName = "MyConfig",             -- ใช้สำหรับ Save/Load Config (ไม่ใส่ก็ได้)
-            Theme = "violet",                    -- "blue" (ค่าเริ่มต้น) / "violet" / "emerald" / "sunset" / "amber"
-        })
-        local Tab = Window:CreateTab("ชื่อแท็บ")
-
-    ระบบธีม (สลับได้ตอนรันจริง ไม่ต้องแก้โค้ด):
-        Library.Themes                        -- ตาราง preset สีทั้งหมด (blue/violet/emerald/sunset/amber)
-        Window:SetTheme("emerald")             -- สลับธีมแบบ live ทั้งหน้าต่าง มีอนิเมชันเปลี่ยนสี
-        Tab:CreateThemePicker("เลือกธีม")       -- Dropdown สำเร็จรูปให้ผู้เล่นสลับธีมเองในเกม
-
-    ฟังก์ชันที่มีให้ทั้งหมดใน Tab:
-        Tab:CreateLabel(text)
-        Tab:CreateSection(text)                                    -- เส้นคั่นหัวข้อย่อย
-        Tab:CreateParagraph(title, content)                        -- กล่องข้อความยาว
-        Tab:CreateButton(text, callback)
-        Tab:CreateToggle(text, default, callback)
-        Tab:CreateSlider(text, min, max, default, callback)
-        Tab:CreateDropdown(text, options, default, callback)       -- เลือกได้ 1 ค่า
-        Tab:CreateMultiDropdown(text, options, defaults, callback) -- เลือกได้หลายค่า
-        Tab:CreateInput(text, placeholder, callback)                -- กล่องพิมพ์ข้อความ
-        Tab:CreateKeybind(text, defaultKey, callback)               -- ปุ่มลัดคีย์บอร์ด
-        Tab:CreateColorPicker(text, defaultColor, callback)         -- เลือกสี
-
-    ฟังก์ชันของ Library / Window:
-        Library:Notify(title, text, duration)   -- แจ้งเตือนมุมจอ
-        Window:SaveConfig()
-        Window:LoadConfig()
-        Window:SetTheme(themeKey)
-        Window:Destroy()
-
-    หมายเหตุ: Elements ทุกตัวที่คืนค่ากลับมา (Toggle/Slider/Dropdown/Input/Keybind/ColorPicker)
-    จะมี :Set(value) และ :Get() ให้ใช้ควบคุม/อ่านค่าจากภายนอกได้ และมี Flag เก็บลง Config อัตโนมัติ
-    ถ้าใส่พารามิเตอร์ตัวสุดท้ายเป็น Flag (string) เช่น Tab:CreateToggle("...", false, cb, "MyFlag")
-]]
-
 local TweenService   = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players         = game:GetService("Players")
@@ -352,25 +309,6 @@ function Library:CreateWindow(config)
     Window.Minimized = false
     Window.CurrentTheme = themeKey
 
-    -- ย้าย ConfigArea มาไว้ล่างสุดตรงนี้ เพื่อให้ถูกสร้างเป็นตัวสุดท้าย (อยู่ล่างสุดของ Sidebar เสมอ)
-    local ConfigArea = create("Frame", {
-        Size = UDim2.new(1, -12, 0, 66), Position = UDim2.new(0, 6, 1, -74),
-        BackgroundTransparency = 1, Parent = Sidebar,
-    })
-    local SaveBtn = create("TextButton", {
-        Text = "บันทึก Config", Font = Enum.Font.Gotham, TextSize = 12,
-        TextColor3 = Theme.SubText, BackgroundColor3 = Theme.Card,
-        Size = UDim2.new(1, 0, 0, 28), Parent = ConfigArea,
-    }, {corner(6)})
-    local LoadBtn = create("TextButton", {
-        Text = "โหลด Config", Font = Enum.Font.Gotham, TextSize = 12,
-        TextColor3 = Theme.SubText, BackgroundColor3 = Theme.Card,
-        Size = UDim2.new(1, 0, 0, 28), Position = UDim2.new(0, 0, 0, 34), Parent = ConfigArea,
-    }, {corner(6)})
-
-    SaveBtn.MouseButton1Click:Connect(function() Window:SaveConfig() end)
-    LoadBtn.MouseButton1Click:Connect(function() Window:LoadConfig() end)
-
     local originalSize = Main.Size
     MinimizeBtn.MouseButton1Click:Connect(function()
         Window.Minimized = not Window.Minimized
@@ -389,6 +327,11 @@ function Library:CreateWindow(config)
             end
         end)
     end
+
+    -- โหลด Config อัตโนมัติหลังสร้างหน้าต่างเสร็จ
+    task.defer(function()
+        Window:LoadConfig()
+    end)
 
     return Window
 end
@@ -437,10 +380,7 @@ function WindowMT:CreateTab(name)
 end
 
 function WindowMT:SaveConfig()
-    if not fileFunctionsExist() then
-        Library:Notify("Config", "Executor นี้ไม่รองรับการบันทึกไฟล์", 3)
-        return
-    end
+    if not fileFunctionsExist() then return end
     local data = {}
     for flag, element in pairs(self.Flags) do
         local ok, value = pcall(function() return element:Get() end)
@@ -449,19 +389,12 @@ function WindowMT:SaveConfig()
     local ok, encoded = pcall(function() return HttpService:JSONEncode(data) end)
     if ok then
         pcall(function() writefile(self.ConfigName .. ".json", encoded) end)
-        Library:Notify("Config", "บันทึก Config สำเร็จ", 2)
     end
 end
 
 function WindowMT:LoadConfig()
-    if not fileFunctionsExist() then
-        Library:Notify("Config", "Executor นี้ไม่รองรับการโหลดไฟล์", 3)
-        return
-    end
-    if not isfile(self.ConfigName .. ".json") then
-        Library:Notify("Config", "ไม่พบไฟล์ Config", 2)
-        return
-    end
+    if not fileFunctionsExist() then return end
+    if not isfile(self.ConfigName .. ".json") then return end
     local ok, raw = pcall(function() return readfile(self.ConfigName .. ".json") end)
     if not ok then return end
     local ok2, data = pcall(function() return HttpService:JSONDecode(raw) end)
@@ -470,15 +403,11 @@ function WindowMT:LoadConfig()
         local element = self.Flags[flag]
         if element then pcall(function() element:Set(value) end) end
     end
-    Library:Notify("Config", "โหลด Config สำเร็จ", 2)
 end
 
 function WindowMT:SetTheme(themeKey)
     local preset = ThemePresets[themeKey]
-    if not preset then
-        warn("[Library] ไม่พบธีมชื่อ: " .. tostring(themeKey))
-        return
-    end
+    if not preset then return end
 
     local oldTheme = {}
     for k, v in pairs(Theme) do oldTheme[k] = v end
@@ -487,7 +416,6 @@ function WindowMT:SetTheme(themeKey)
     self.CurrentTheme = themeKey
 
     repaintTheme(self.ScreenGui, oldTheme, Theme)
-    Library:Notify("ธีม", "เปลี่ยนเป็น " .. (preset.DisplayName or themeKey), 2)
 end
 
 function WindowMT:Destroy()
@@ -498,7 +426,14 @@ TabMT = {}
 TabMT.__index = TabMT
 
 local function registerFlag(tab, flag, element)
-    if flag then tab.Window.Flags[flag] = element end
+    if flag then
+        tab.Window.Flags[flag] = element
+    end
+end
+
+-- ฟังก์ชันช่วยบันทึกอัตโนมัติเมื่อค่าเปลี่ยน
+local function triggerAutoSave(tab)
+    tab.Window:SaveConfig()
 end
 
 function TabMT:CreateLabel(text)
@@ -598,10 +533,16 @@ function TabMT:CreateToggle(text, default, callback, flag)
         state = not state
         updateVisual()
         callback(state)
+        triggerAutoSave(self)
     end)
 
     local Obj = {
-        Set = function(_, value) state = value; updateVisual(); callback(state) end,
+        Set = function(_, value)
+            state = value
+            updateVisual()
+            callback(state)
+            triggerAutoSave(self)
+        end,
         Get = function() return state end,
     }
     registerFlag(self, flag, Obj)
@@ -638,36 +579,46 @@ function TabMT:CreateSlider(text, min, max, default, callback, flag)
     }, {corner(6)})
 
     local dragging = false
-    local function setFromX(xPos)
+    local function setFromX(xPos, isRelease)
         local ratio = math.clamp((xPos - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
         value = math.floor(min + (max - min) * ratio + 0.5)
         Fill.Size = UDim2.new(ratio, 0, 1, 0)
         Knob.Position = UDim2.new(ratio, -6, 0.5, -6)
         ValueLabel.Text = tostring(value)
         callback(value)
+        if isRelease then
+            triggerAutoSave(self)
+        end
     end
 
     Track.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            setFromX(input.Position.X)
+            setFromX(input.Position.X, false)
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            setFromX(input.Position.X)
+            setFromX(input.Position.X, false)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
             dragging = false
+            triggerAutoSave(self)
         end
     end)
 
     local Obj = {
         Set = function(_, v)
             v = math.clamp(v, min, max)
-            setFromX(Track.AbsolutePosition.X + (ratioFromValue(v) * Track.AbsoluteSize.X))
+            value = v
+            local ratio = ratioFromValue(v)
+            Fill.Size = UDim2.new(ratio, 0, 1, 0)
+            Knob.Position = UDim2.new(ratio, -6, 0.5, -6)
+            ValueLabel.Text = tostring(value)
+            callback(value)
+            triggerAutoSave(self)
         end,
         Get = function() return value end,
     }
@@ -714,6 +665,7 @@ function TabMT:CreateDropdown(text, options, default, callback, flag)
             callback(selected)
             open = false
             tween(Card, {Size = UDim2.new(1, 0, 0, 36)}, 0.15)
+            triggerAutoSave(self)
         end)
     end
 
@@ -724,7 +676,12 @@ function TabMT:CreateDropdown(text, options, default, callback, flag)
     end)
 
     local Obj = {
-        Set = function(_, value) selected = value; SelectedLabel.Text = tostring(value); callback(selected) end,
+        Set = function(_, value)
+            selected = value
+            SelectedLabel.Text = tostring(value)
+            callback(selected)
+            triggerAutoSave(self)
+        end,
         Get = function() return selected end,
     }
     registerFlag(self, flag, Obj)
@@ -770,6 +727,7 @@ function TabMT:CreateMultiDropdown(text, options, defaults, callback, flag)
             local list = {}
             for name, isSel in pairs(selected) do if isSel then table.insert(list, name) end end
             callback(list)
+            triggerAutoSave(self)
         end)
     end
 
@@ -786,7 +744,10 @@ function TabMT:CreateMultiDropdown(text, options, defaults, callback, flag)
             for _, child in ipairs(OptionsHolder:GetChildren()) do
                 if child:IsA("TextButton") then tween(child, {BackgroundColor3 = buttonColor(child.Text)}, 0.15) end
             end
-            callback(list)
+            local listRes = {}
+            for name, isSel in pairs(selected) do if isSel then table.insert(listRes, name) end end
+            callback(listRes)
+            triggerAutoSave(self)
         end,
         Get = function()
             local list = {}
@@ -816,10 +777,15 @@ function TabMT:CreateInput(text, placeholder, callback, flag)
 
     Box.FocusLost:Connect(function(enterPressed)
         callback(Box.Text, enterPressed)
+        triggerAutoSave(self)
     end)
 
     local Obj = {
-        Set = function(_, value) Box.Text = value; callback(value, false) end,
+        Set = function(_, value)
+            Box.Text = value
+            callback(value, false)
+            triggerAutoSave(self)
+        end,
         Get = function() return Box.Text end,
     }
     registerFlag(self, flag, Obj)
@@ -860,11 +826,18 @@ function TabMT:CreateKeybind(text, defaultKey, callback, flag)
             currentKey = input.KeyCode
             KeyBtn.Text = currentKey.Name
             listening = false
+            callback(currentKey)
+            triggerAutoSave(self)
         end
     end)
 
     local Obj = {
-        Set = function(_, key) currentKey = key; KeyBtn.Text = key.Name end,
+        Set = function(_, key)
+            currentKey = key
+            KeyBtn.Text = key.Name
+            callback(currentKey)
+            triggerAutoSave(self)
+        end,
         Get = function() return currentKey end,
     }
     registerFlag(self, flag, Obj)
@@ -896,7 +869,7 @@ function TabMT:CreateColorPicker(text, defaultColor, callback, flag)
         BackgroundTransparency = 1, Parent = Card,
     })
 
-    local function makeChannelSlider(labelText, order, initValue, onChange)
+    local function makeChannelSlider(labelText, order, initValue, onChange, onRelease)
         local Row = create("Frame", {
             Size = UDim2.new(1, 0, 0, 22), Position = UDim2.new(0, 0, 0, (order - 1) * 26),
             BackgroundTransparency = 1, Parent = PickerHolder,
@@ -930,7 +903,10 @@ function TabMT:CreateColorPicker(text, defaultColor, callback, flag)
         end)
         UserInputService.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = false
+                if dragging then
+                    dragging = false
+                    if onRelease then onRelease() end
+                end
             end
         end)
         return Fill, Track
@@ -942,9 +918,10 @@ function TabMT:CreateColorPicker(text, defaultColor, callback, flag)
         Preview.BackgroundColor3 = color
         callback(color)
     end
-    makeChannelSlider("R", 1, r, function(v) r = v; updateColor() end)
-    makeChannelSlider("G", 2, g, function(v) g = v; updateColor() end)
-    makeChannelSlider("B", 3, b, function(v) b = v; updateColor() end)
+
+    makeChannelSlider("R", 1, r, function(v) r = v; updateColor() end, function() triggerAutoSave(self) end)
+    makeChannelSlider("G", 2, g, function(v) g = v; updateColor() end, function() triggerAutoSave(self) end)
+    makeChannelSlider("B", 3, b, function(v) b = v; updateColor() end, function() triggerAutoSave(self) end)
 
     Preview.MouseButton1Click:Connect(function()
         open = not open
@@ -957,6 +934,7 @@ function TabMT:CreateColorPicker(text, defaultColor, callback, flag)
             r, g, b = math.floor(color.R * 255), math.floor(color.G * 255), math.floor(color.B * 255)
             Preview.BackgroundColor3 = color
             callback(color)
+            triggerAutoSave(self)
         end,
         Get = function() return color end,
     }
