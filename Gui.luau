@@ -384,7 +384,7 @@ function Library:CreateWindow(config)
     })
 
     local CloseBtn = create("TextButton", {
-        Text = "✕", Font = Enum.Font.GothamBold, TextSize = 16,
+        Text = "X", Font = Enum.Font.GothamBold, TextSize = 16,
         TextColor3 = Theme.SubText, BackgroundTransparency = 1,
         Size = UDim2.new(0, 36, 0, 36), Position = UDim2.new(1, -40, 0, 3),
         Parent = Header,
