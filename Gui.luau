@@ -1071,6 +1071,7 @@ function TabMT:CreateKeybind(text, defaultKey, callback, flag)
             currentKey = input.KeyCode
             KeyBtn.Text = currentKey.Name
             listening = false
+            callback(currentKey) -- อัปเดตผลทันที ไม่ต้องรอกดคีย์นี้ซ้ำอีกรอบ
         end
     end)
 
