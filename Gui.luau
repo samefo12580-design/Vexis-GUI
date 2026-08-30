@@ -352,7 +352,7 @@ function Library:CreateWindow(config)
     Window.Minimized = false
     Window.CurrentTheme = themeKey
 
-    -- [แก้ไขจุดที่สลับ] ย้าย ConfigArea มาไว้ตรงนี้ เพื่อให้ถูกสร้างเป็นตัวสุดท้าย ต่อจาก Tab ต่างๆ
+    -- ย้าย ConfigArea มาไว้ล่างสุดตรงนี้ เพื่อให้ถูกสร้างเป็นตัวสุดท้าย (อยู่ล่างสุดของ Sidebar เสมอ)
     local ConfigArea = create("Frame", {
         Size = UDim2.new(1, -12, 0, 66), Position = UDim2.new(0, 6, 1, -74),
         BackgroundTransparency = 1, Parent = Sidebar,
