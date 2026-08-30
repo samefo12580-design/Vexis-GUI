@@ -102,12 +102,9 @@ local ThemePresets = {
     },
 }
 
--- Theme คือตารางสีที่ "กำลังใช้งานอยู่จริง" ทุกส่วนของโค้ดอ้างอิงตัวนี้
--- เวลาสลับธีม เราจะแก้ค่าข้างในตารางนี้ตรงๆ (ของเดิมทุกจุดจะเห็นค่าใหม่ทันที)
 local Theme = {}
 for k, v in pairs(ThemePresets.blue) do Theme[k] = v end
 
---// ตัวช่วยสร้าง Instance
 local function create(class, props, children)
     local inst = Instance.new(class)
     for prop, value in pairs(props or {}) do
@@ -123,8 +120,6 @@ local function corner(radius) return create("UICorner", {CornerRadius = UDim.new
 local function stroke(color, thickness) return create("UIStroke", {Color = color or Theme.Stroke, Thickness = thickness or 1}) end
 local function tween(obj, props, time) TweenService:Create(obj, TweenInfo.new(time or 0.2, Enum.EasingStyle.Quad), props):Play() end
 
--- อ่านสี "เก่า" ของทุก element ในหน้าต่าง แล้วจับคู่ไปยังสี "ใหม่" ของธีมที่เลือก
--- ทำงานได้กับ element ทุกตัวโดยไม่ต้องจดทะเบียนไว้ล่วงหน้า เพราะเทียบค่าสีตรงๆ
 local function repaintTheme(screenGui, oldTheme, newTheme)
     if not screenGui then return end
     local function remap(color)
@@ -163,7 +158,6 @@ local function repaintTheme(screenGui, oldTheme, newTheme)
     end
 end
 
---// ลากหน้าต่าง
 local function makeDraggable(dragHandle, targetFrame)
     local dragging, dragStart, startPos
     dragHandle.InputBegan:Connect(function(input)
@@ -184,18 +178,14 @@ local function makeDraggable(dragHandle, targetFrame)
     end)
 end
 
---// ระบบไฟล์ (เผื่อ executor ไม่รองรับ ก็ปลอดภัยด้วย pcall)
 local function fileFunctionsExist()
     return writefile ~= nil and readfile ~= nil and isfile ~= nil
 end
 
---=========================================================
---  LIBRARY
---=========================================================
 local Library = {}
 Library.__index = Library
 
-local NotifHolder -- เก็บ ScreenGui สำหรับ Notification (ตั้งค่าตอนสร้าง Window)
+local NotifHolder
 
 function Library:Notify(title, text, duration)
     duration = duration or 3
@@ -262,7 +252,6 @@ function Library:Notify(title, text, duration)
     end)
 end
 
--- เปิดให้เรียกดู/อ้างอิงจากภายนอกได้ เช่น for key,preset in pairs(Library.Themes) do ... end
 Library.Themes = ThemePresets
 
 function Library:CreateWindow(config)
@@ -286,7 +275,6 @@ function Library:CreateWindow(config)
         Parent = PlayerGui,
     })
 
-    -- ที่เก็บ Notification (มุมขวาบน)
     NotifHolder = create("Frame", {
         Name = "Notifications",
         AnchorPoint = Vector2.new(1, 0),
@@ -347,7 +335,24 @@ function Library:CreateWindow(config)
     create("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}).Parent = Sidebar
     create("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6)}).Parent = Sidebar
 
-    -- ปุ่ม Save/Load Config ด้านล่าง Sidebar
+    local Content = create("Frame", {
+        Name = "Content", Size = UDim2.new(1, -140, 1, -42), Position = UDim2.new(0, 140, 0, 42),
+        BackgroundTransparency = 1, Parent = Main,
+    })
+
+    local Window = setmetatable({}, {__index = WindowMT})
+    Window.ScreenGui = ScreenGui
+    Window.Main = Main
+    Window.Sidebar = Sidebar
+    Window.Content = Content
+    Window.Tabs = {}
+    Window.ActiveTab = nil
+    Window.Flags = {}
+    Window.ConfigName = configName
+    Window.Minimized = false
+    Window.CurrentTheme = themeKey
+
+    -- [แก้ไขจุดที่สลับ] ย้าย ConfigArea มาไว้ตรงนี้ เพื่อให้ถูกสร้างเป็นตัวสุดท้าย ต่อจาก Tab ต่างๆ
     local ConfigArea = create("Frame", {
         Size = UDim2.new(1, -12, 0, 66), Position = UDim2.new(0, 6, 1, -74),
         BackgroundTransparency = 1, Parent = Sidebar,
@@ -363,22 +368,8 @@ function Library:CreateWindow(config)
         Size = UDim2.new(1, 0, 0, 28), Position = UDim2.new(0, 0, 0, 34), Parent = ConfigArea,
     }, {corner(6)})
 
-    local Content = create("Frame", {
-        Name = "Content", Size = UDim2.new(1, -140, 1, -42), Position = UDim2.new(0, 140, 0, 42),
-        BackgroundTransparency = 1, Parent = Main,
-    })
-
-    local Window = setmetatable({}, {__index = WindowMT})
-    Window.ScreenGui = ScreenGui
-    Window.Main = Main
-    Window.Sidebar = Sidebar
-    Window.Content = Content
-    Window.Tabs = {}
-    Window.ActiveTab = nil
-    Window.Flags = {}       -- เก็บ element ทั้งหมดที่มี Flag ไว้ save/load
-    Window.ConfigName = configName
-    Window.Minimized = false
-    Window.CurrentTheme = themeKey
+    SaveBtn.MouseButton1Click:Connect(function() Window:SaveConfig() end)
+    LoadBtn.MouseButton1Click:Connect(function() Window:LoadConfig() end)
 
     local originalSize = Main.Size
     MinimizeBtn.MouseButton1Click:Connect(function()
@@ -399,15 +390,9 @@ function Library:CreateWindow(config)
         end)
     end
 
-    SaveBtn.MouseButton1Click:Connect(function() Window:SaveConfig() end)
-    LoadBtn.MouseButton1Click:Connect(function() Window:LoadConfig() end)
-
     return Window
 end
 
---=========================================================
---  WINDOW METHODS
---=========================================================
 WindowMT = {}
 WindowMT.__index = WindowMT
 
@@ -488,7 +473,6 @@ function WindowMT:LoadConfig()
     Library:Notify("Config", "โหลด Config สำเร็จ", 2)
 end
 
--- สลับธีมแบบ Live: ให้ key ตรงกับ Library.Themes เช่น "violet", "emerald", "sunset", "amber", "blue"
 function WindowMT:SetTheme(themeKey)
     local preset = ThemePresets[themeKey]
     if not preset then
@@ -496,7 +480,6 @@ function WindowMT:SetTheme(themeKey)
         return
     end
 
-    -- เก็บสีชุดเก่าไว้ก่อน เพื่อใช้จับคู่ (remap) เป็นสีชุดใหม่
     local oldTheme = {}
     for k, v in pairs(Theme) do oldTheme[k] = v end
 
@@ -511,9 +494,6 @@ function WindowMT:Destroy()
     if self.ScreenGui then self.ScreenGui:Destroy() end
 end
 
---=========================================================
---  TAB METHODS
---=========================================================
 TabMT = {}
 TabMT.__index = TabMT
 
