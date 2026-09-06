@@ -420,7 +420,7 @@ function Library:CreateWindow(config)
     })
 
     local CloseBtn = create("TextButton", {
-        Text = "✕", Font = Enum.Font.GothamBold, TextSize = 16,
+        Text = X Font = Enum.Font.GothamBold, TextSize = 16,
         TextColor3 = Theme.SubText, BackgroundTransparency = 1,
         Size = UDim2.new(0, 36, 0, 36), Position = UDim2.new(1, -40, 0, 3),
         Parent = Header,
@@ -436,7 +436,7 @@ function Library:CreateWindow(config)
 
     -- ช่องค้นหาแท็บ
     local SearchBox = create("TextBox", {
-        Text = "", PlaceholderText = "🔍 ค้นหา...", Font = Enum.Font.Gotham, TextSize = 12,
+        Text = "", PlaceholderText = " search...", Font = Enum.Font.Gotham, TextSize = 12,
         TextColor3 = Theme.Text, PlaceholderColor3 = Theme.SubText, ClearTextOnFocus = false,
         BackgroundColor3 = Theme.Card, Size = UDim2.new(1, -12, 0, 26), Position = UDim2.new(0, 6, 0, 6),
         Parent = Sidebar,
@@ -467,7 +467,7 @@ function Library:CreateWindow(config)
             ZIndex = 51, Parent = LoadingScreen,
         })
         create("TextLabel", {
-            Text = config.LoadingSubtitle or "กำลังโหลด...", Font = Enum.Font.Gotham, TextSize = 13,
+            Text = config.LoadingSubtitle or "Loading...", Font = Enum.Font.Gotham, TextSize = 13,
             TextColor3 = Theme.SubText, BackgroundTransparency = 1,
             Size = UDim2.new(1, 0, 0, 20), Position = UDim2.new(0, 0, 0.45, 4),
             ZIndex = 51, Parent = LoadingScreen,
