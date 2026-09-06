@@ -769,10 +769,50 @@ function TabMT:CreateParagraph(title, content)
 
     return {
         Instance = Card, -- เผื่อใช้กับ Library:AddTooltip หรืออ้างอิง Frame ตรงๆ
-        SetTitle = function(_, newTitle) TitleLabel.Text = newTitle end,
-        SetContent = function(_, newContent) ContentLabel.Text = newContent end,
+        SetTitle = function(_, newTitle, color)
+            TitleLabel.Text = newTitle
+            if color then TitleLabel.TextColor3 = color end
+        end,
+        SetContent = function(_, newContent, color)
+            ContentLabel.Text = newContent
+            if color then ContentLabel.TextColor3 = color end
+        end,
+        SetTitleColor = function(_, color) TitleLabel.TextColor3 = color end,
+        SetContentColor = function(_, color) ContentLabel.TextColor3 = color end,
         GetTitle = function() return TitleLabel.Text end,
         GetContent = function() return ContentLabel.Text end,
+    }
+end
+
+-- กล่องข้อความบรรทัดเดียว หน้าตาคล้าย CreateParagraph แต่ไม่มีหัวข้อแยก เหมาะกับข้อความสถานะสั้นๆ ที่อยากอัปเดตทีหลัง
+-- ตัวอย่าง: local Status = Tab:CreateText("กำลังโหลด...")
+--          Status:SetText("เสร็จแล้ว", Color3.fromRGB(120,220,150))
+--          Status:SetColor(Color3.fromRGB(255,90,90))
+function TabMT:CreateText(text)
+    local Card = create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = Theme.Card, Parent = self.Page,
+    }, {corner(6), stroke()})
+    create("UIPadding", {
+        PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
+        PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), Parent = Card,
+    })
+
+    local Label = create("TextLabel", {
+        Text = text, Font = Enum.Font.Gotham, TextSize = 14,
+        TextColor3 = Theme.Text, BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
+    })
+
+    return {
+        Instance = Card,
+        SetText = function(_, newText, color)
+            Label.Text = newText
+            if color then Label.TextColor3 = color end
+        end,
+        SetColor = function(_, color) Label.TextColor3 = color end,
+        GetText = function() return Label.Text end,
     }
 end
 
