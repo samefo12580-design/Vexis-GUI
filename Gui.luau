@@ -302,6 +302,42 @@ function Library:AddTooltip(guiObject, text)
     end)
 end
 
+-- ดึง CFrame ปัจจุบันของตัวละคร โดยไม่ต้องพึ่ง UI element ใดๆ (เรียกจากที่ไหนก็ได้)
+-- คืนค่าเป็น CFrame object หรือ nil ถ้าไม่มี Character
+function Library:GetCharacterCFrame()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    return hrp and hrp.CFrame or nil
+end
+
+-- แบบเดียวกับด้านบน แต่คืนเป็น string พร้อมวางในสคริปต์ได้เลย เช่น "CFrame.new(1, 2, 3, ...)"
+function Library:GetCharacterCFrameString()
+    local cf = self:GetCharacterCFrame()
+    if not cf then return nil end
+    local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
+    return string.format(
+        "CFrame.new(%.3f, %.3f, %.3f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f, %.5f)",
+        x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22
+    )
+end
+
+-- คัดลอก CFrame ปัจจุบันลงคลิปบอร์ดทันที ไม่ต้องมี UI เลย เช่นผูกกับ Keybind ของตัวเองได้
+-- คืนค่า (success: boolean, cfString: string?)
+function Library:CopyCharacterCFrame()
+    local cfStr = self:GetCharacterCFrameString()
+    if not cfStr then
+        self:Notify("CFrame", "ไม่พบตัวละคร (Character) ในตอนนี้", 3)
+        return false, nil
+    end
+    local copied = setclipboard and pcall(function() setclipboard(cfStr) end)
+    if copied then
+        self:Notify("CFrame", "คัดลอกลงคลิปบอร์ดแล้ว", 2)
+    else
+        self:Notify("CFrame", "Executor นี้ไม่รองรับ setclipboard: " .. cfStr, 5)
+    end
+    return copied or false, cfStr
+end
+
 function Library:CreateWindow(config)
     config = config or {}
     local title = config.Title or "Window"
@@ -384,7 +420,7 @@ function Library:CreateWindow(config)
     })
 
     local CloseBtn = create("TextButton", {
-        Text = "X", Font = Enum.Font.GothamBold, TextSize = 16,
+        Text = "✕", Font = Enum.Font.GothamBold, TextSize = 16,
         TextColor3 = Theme.SubText, BackgroundTransparency = 1,
         Size = UDim2.new(0, 36, 0, 36), Position = UDim2.new(1, -40, 0, 3),
         Parent = Header,
@@ -718,18 +754,26 @@ function TabMT:CreateParagraph(title, content)
         PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), Parent = Card,
     })
     create("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}).Parent = Card
-    create("TextLabel", {
+
+    local TitleLabel = create("TextLabel", {
         Text = title, Font = Enum.Font.GothamBold, TextSize = 14,
         TextColor3 = Theme.Text, BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 0, 18), TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
     })
-    create("TextLabel", {
+    local ContentLabel = create("TextLabel", {
         Text = content, Font = Enum.Font.Gotham, TextSize = 13,
         TextColor3 = Theme.SubText, BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
         TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
     })
-    return Card
+
+    return {
+        Instance = Card, -- เผื่อใช้กับ Library:AddTooltip หรืออ้างอิง Frame ตรงๆ
+        SetTitle = function(_, newTitle) TitleLabel.Text = newTitle end,
+        SetContent = function(_, newContent) ContentLabel.Text = newContent end,
+        GetTitle = function() return TitleLabel.Text end,
+        GetContent = function() return ContentLabel.Text end,
+    }
 end
 
 function TabMT:CreateButton(text, callback)
@@ -1221,6 +1265,59 @@ function TabMT:CreateToggleMenuKeybind(text)
     return self:CreateKeybind(text, self.Window.ToggleKey or Enum.KeyCode.RightControl, function(key)
         self.Window.ToggleKey = key
     end, "__ToggleMenuKey")
+end
+
+-- ปุ่มคัดลอก CFrame ของตำแหน่งที่ตัวละครยืนอยู่ตอนนี้ (เอาไปวางในสคริปต์ทีหลังได้เลย)
+-- ตัวอย่าง: Tab:CreateCFrameCopier("คัดลอกตำแหน่งที่ยืน")
+function TabMT:CreateCFrameCopier(text)
+    text = text or "คัดลอกตำแหน่งที่ยืน (CFrame)"
+
+    local Card = create("Frame", {
+        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = Theme.Card,
+        ClipsDescendants = true, Parent = self.Page,
+    }, {corner(6), stroke()})
+
+    create("TextLabel", {
+        Text = text, Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = Theme.Text,
+        BackgroundTransparency = 1, Size = UDim2.new(1, -92, 0, 36), Position = UDim2.new(0, 12, 0, 0),
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
+    })
+
+    local CopyBtn = create("TextButton", {
+        Text = "คัดลอก", Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = Theme.Text,
+        BackgroundColor3 = Theme.Accent, Size = UDim2.new(0, 72, 0, 26), Position = UDim2.new(1, -84, 0, 5),
+        Parent = Card,
+    }, {corner(5)})
+
+    -- กล่องข้อความสำรอง ไว้ก็อปด้วยมือถ้า setclipboard ใช้ไม่ได้ (ซ่อนไว้จนกว่าจะกดครั้งแรก)
+    local OutputBox = create("TextBox", {
+        Text = "", Font = Enum.Font.Code, TextSize = 12, TextColor3 = Theme.SubText,
+        ClearTextOnFocus = false, TextEditable = true, MultiLine = false,
+        BackgroundColor3 = Theme.Sidebar, Size = UDim2.new(1, -16, 0, 26),
+        Position = UDim2.new(0, 8, 0, 40), Visible = false, Parent = Card,
+    }, {corner(5)})
+    create("UIPadding", {PaddingLeft = UDim.new(0, 8)}).Parent = OutputBox
+
+    CopyBtn.MouseButton1Click:Connect(function()
+        local cfStr = Library:GetCharacterCFrameString()
+        if not cfStr then
+            Library:Notify("CFrame", "ไม่พบตัวละคร (Character) ในตอนนี้", 3)
+            return
+        end
+
+        OutputBox.Text = cfStr
+        OutputBox.Visible = true
+        tween(Card, {Size = UDim2.new(1, 0, 0, 74)}, 0.15)
+
+        local copied = Library:CopyCharacterCFrame()
+        if not copied then
+            OutputBox:CaptureFocus()
+        end
+    end)
+
+    return {
+        GetCFrameString = function() return Library:GetCharacterCFrameString() end,
+    }
 end
 
 return Library
