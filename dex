@@ -688,17 +688,6 @@ function Library:CreateWindow(config)
     Window.CurrentTheme = themeKey
     Window.ToggleKey = toggleKey
 
-    SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        local query = SearchBox.Text:lower()
-        for _, t in ipairs(Window.Tabs) do
-            if query == "" then
-                t.Button.Visible = true
-            else
-                t.Button.Visible = t.Name:lower():find(query, 1, true) ~= nil
-            end
-        end
-    end)
-
     Window.AutoSaveEnabled = true
     task.defer(function()
         if fileFunctionsExist() and isfile(Window.ConfigName .. ".json") then
