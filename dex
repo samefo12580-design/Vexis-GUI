@@ -1,49 +1,14 @@
 --[[
-    Library.lua - UI Framework ฉบับสมบูรณ์ สำหรับ Roblox (รวมฟังก์ชันครบถ้วน พร้อม UI รูปแบบใหม่)
-    ===============================================================
-    วิธีใช้เบื้องต้น:
+    Library.lua - UI Framework ดีไซน์ใหม่ ทันสมัย พร้อมฟังก์ชันครบถ้วน 100% จากตัวเก่า
+    วิธีใช้:
         local Library = loadstring(game:HttpGet("URL_ของไฟล์นี้"))()
         local Window = Library:CreateWindow({
             Title = "ชื่อหน้าต่าง",
-            ToggleKey = Enum.KeyCode.RightShift, -- กดเพื่อซ่อน/แสดงหน้าต่าง (ไม่ใส่ก็ได้)
-            ConfigName = "MyConfig",             -- ใช้สำหรับ Save/Load Config (ไม่ใส่ก็ได้)
-            Theme = "violet",                    -- "blue" (ค่าเริ่มต้น) / "violet" / "emerald" / "sunset" / "amber"
+            ToggleKey = Enum.KeyCode.RightShift,
+            ConfigName = "MyConfig",
+            Theme = "blue", -- "blue" / "violet" / "emerald" / "sunset" / "amber"
         })
         local Tab = Window:CreateTab("ชื่อแท็บ")
-
-    ระบบธีม (สลับได้ตอนรันจริง ไม่ต้องแก้โค้ด):
-        Library.Themes                        -- ตาราง preset สีทั้งหมด (blue/violet/emerald/sunset/amber)
-        Window:SetTheme("emerald")             -- สลับธีมแบบ live ทั้งหน้าต่าง มีอนิเมชันเปลี่ยนสี
-        Tab:CreateThemePicker("เลือกธีม")       -- Dropdown สำเร็จรูปให้ผู้เล่นสลับธีมเองในเกม
-
-    ฟังก์ชันที่มีให้ทั้งหมดใน Tab (ครบถ้วนจากอันเก่า 100%):
-        Tab:CreateLabel(text)
-        Tab:CreateGroupbox(title)
-        Tab:CreateSection(text)
-        Tab:CreateParagraph(title, content)
-        Tab:CreateText(text)
-        Tab:CreateButton(text, callback)
-        Tab:CreateToggle(text, default, callback, flag)
-        Tab:CreateSlider(text, min, max, default, callback, flag)
-        Tab:CreateDropdown(text, options, default, callback, flag)
-        Tab:CreateMultiDropdown(text, options, defaults, callback, flag)
-        Tab:CreateInput(text, placeholder, callback, flag)
-        Tab:CreateKeybind(text, defaultKey, callback, flag)
-        Tab:CreateColorPicker(text, defaultColor, callback, flag)
-        Tab:CreateThemePicker(text)
-        Tab:CreateToggleMenuKeybind(text)
-        Tab:CreateCFrameCopier(text)
-
-    ฟังก์ชันของ Library / Window:
-        Library:Notify(title, text, duration)
-        Library:AddTooltip(guiObject, text)
-        Library:GetCharacterCFrame()
-        Library:GetCharacterCFrameString()
-        Library:CopyCharacterCFrame()
-        Window:SaveConfig()
-        Window:LoadConfig()
-        Window:SetTheme(themeKey)
-        Window:Destroy()
 ]]
 
 local TweenService   = game:GetService("TweenService")
@@ -54,7 +19,7 @@ local HttpService     = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
---// ธีมสีทั้งหมดที่มีให้
+--// ธีมสีทั้งหมดที่มีให้เลือก
 local ThemePresets = {
     blue = {
         DisplayName = "Default Blue",
@@ -111,7 +76,6 @@ local ThemePresets = {
 local Theme = {}
 for k, v in pairs(ThemePresets.blue) do Theme[k] = v end
 
---// ตัวช่วยสร้าง Instance (UI รูปแบบใหม่ ทันสมัย โค้งมน นุ่มนวล)
 local function create(class, props, children)
     local inst = Instance.new(class)
     for prop, value in pairs(props or {}) do
@@ -198,9 +162,6 @@ local function fileFunctionsExist()
     return writefile ~= nil and readfile ~= nil and isfile ~= nil
 end
 
---=========================================================
---  LIBRARY
---=========================================================
 local Library = {}
 Library.__index = Library
 
@@ -211,59 +172,37 @@ function Library:Notify(title, text, duration)
     if not NotifHolder then return end
 
     local Card = create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundColor3 = Theme.Card,
-        Parent = NotifHolder,
-        ClipsDescendants = true,
+        Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = Theme.Card, Parent = NotifHolder, ClipsDescendants = true,
     }, {corner(10), stroke()})
 
     create("UIPadding", {
         PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12),
-        PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
-        Parent = Card,
+        PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14), Parent = Card,
     })
-
     create("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}).Parent = Card
 
     create("TextLabel", {
-        Text = title or "แจ้งเตือน",
-        Font = Enum.Font.GothamBold,
-        TextSize = 14,
-        TextColor3 = Theme.Text,
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 20),
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = Card,
+        Text = title or "แจ้งเตือน", Font = Enum.Font.GothamBold, TextSize = 14,
+        TextColor3 = Theme.Text, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20),
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
     })
 
     create("TextLabel", {
-        Text = text or "",
-        Font = Enum.Font.Gotham,
-        TextSize = 13,
-        TextColor3 = Theme.SubText,
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = Card,
+        Text = text or "", Font = Enum.Font.Gotham, TextSize = 13,
+        TextColor3 = Theme.SubText, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y, TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
     })
 
     Card.BackgroundTransparency = 1
-    for _, d in ipairs(Card:GetDescendants()) do
-        if d:IsA("TextLabel") then d.TextTransparency = 1 end
-    end
+    for _, d in ipairs(Card:GetDescendants()) do if d:IsA("TextLabel") then d.TextTransparency = 1 end end
     tween(Card, {BackgroundTransparency = 0}, 0.25)
-    for _, d in ipairs(Card:GetDescendants()) do
-        if d:IsA("TextLabel") then tween(d, {TextTransparency = 0}, 0.25) end
-    end
+    for _, d in ipairs(Card:GetDescendants()) do if d:IsA("TextLabel") then tween(d, {TextTransparency = 0}, 0.25) end end
 
     task.delay(duration, function()
         tween(Card, {BackgroundTransparency = 1}, 0.3)
-        for _, d in ipairs(Card:GetDescendants()) do
-            if d:IsA("TextLabel") then tween(d, {TextTransparency = 1}, 0.3) end
-        end
+        for _, d in ipairs(Card:GetDescendants()) do if d:IsA("TextLabel") then tween(d, {TextTransparency = 1}, 0.3) end end
         task.wait(0.3)
         Card:Destroy()
     end)
@@ -342,12 +281,9 @@ function Library:CreateWindow(config)
     })
 
     NotifHolder = create("Frame", {
-        Name = "Notifications",
-        AnchorPoint = Vector2.new(1, 0),
-        Position = UDim2.new(1, -20, 0, 20),
-        Size = UDim2.new(0, 280, 1, -40),
-        BackgroundTransparency = 1,
-        Parent = ScreenGui,
+        Name = "Notifications", AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -20, 0, 20), Size = UDim2.new(0, 280, 1, -40),
+        BackgroundTransparency = 1, Parent = ScreenGui,
     })
     create("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Top}).Parent = NotifHolder
 
@@ -366,40 +302,31 @@ function Library:CreateWindow(config)
         ZIndex = 200, Parent = TooltipFrame,
     })
 
-    -- UI รูปแบบใหม่: ดีไซน์พรีเมียม โค้งมน ทันสมัย ขอบเงียนสวยงาม
+    -- หน้าต่างหลัก (ดีไซน์ใหม่ โค้งมน ทันสมัย)
     local Main = create("Frame", {
-        Name = "Main",
-        Size = UDim2.new(0, 600, 0, 400),
+        Name = "Main", Size = UDim2.new(0, 600, 0, 400),
         Position = UDim2.new(0.5, -300, 0.5, -200),
-        BackgroundColor3 = Theme.Background,
-        ClipsDescendants = true,
-        Parent = ScreenGui,
+        BackgroundColor3 = Theme.Background, ClipsDescendants = true, Parent = ScreenGui,
     }, {corner(12), stroke(Theme.Stroke, 1.5)})
 
     local Header = create("Frame", {
-        Name = "Header", Size = UDim2.new(1, 0, 0, 46),
-        BackgroundColor3 = Theme.Header, Parent = Main,
+        Name = "Header", Size = UDim2.new(1, 0, 0, 46), BackgroundColor3 = Theme.Header, Parent = Main,
     })
 
     create("TextLabel", {
-        Text = title, Font = Enum.Font.GothamBold, TextSize = 15,
-        TextColor3 = Theme.Text, BackgroundTransparency = 1,
-        Size = UDim2.new(1, -120, 1, 0), Position = UDim2.new(0, 16, 0, 0),
+        Text = title, Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Theme.Text,
+        BackgroundTransparency = 1, Size = UDim2.new(1, -120, 1, 0), Position = UDim2.new(0, 16, 0, 0),
         TextXAlignment = Enum.TextXAlignment.Left, Parent = Header,
     })
 
     local MinimizeBtn = create("TextButton", {
-        Text = "–", Font = Enum.Font.GothamBold, TextSize = 18,
-        TextColor3 = Theme.SubText, BackgroundTransparency = 1,
-        Size = UDim2.new(0, 36, 0, 36), Position = UDim2.new(1, -80, 0, 5),
-        Parent = Header,
+        Text = "–", Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = Theme.SubText,
+        BackgroundTransparency = 1, Size = UDim2.new(0, 36, 0, 36), Position = UDim2.new(1, -80, 0, 5), Parent = Header,
     })
 
     local CloseBtn = create("TextButton", {
-        Text = "✕", Font = Enum.Font.GothamBold, TextSize = 14,
-        TextColor3 = Theme.SubText, BackgroundTransparency = 1,
-        Size = UDim2.new(0, 36, 0, 36), Position = UDim2.new(1, -42, 0, 5),
-        Parent = Header,
+        Text = "✕", Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = Theme.SubText,
+        BackgroundTransparency = 1, Size = UDim2.new(0, 36, 0, 36), Position = UDim2.new(1, -42, 0, 5), Parent = Header,
     })
     CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 
@@ -413,8 +340,7 @@ function Library:CreateWindow(config)
     local SearchBox = create("TextBox", {
         Text = "", PlaceholderText = "🔍 ค้นหาเมนู...", Font = Enum.Font.Gotham, TextSize = 12,
         TextColor3 = Theme.Text, PlaceholderColor3 = Theme.SubText, ClearTextOnFocus = false,
-        BackgroundColor3 = Theme.Card, Size = UDim2.new(1, -16, 0, 30), Position = UDim2.new(0, 8, 0, 10),
-        Parent = Sidebar,
+        BackgroundColor3 = Theme.Card, Size = UDim2.new(1, -16, 0, 30), Position = UDim2.new(0, 8, 0, 10), Parent = Sidebar,
     }, {corner(8)})
     create("UIPadding", {PaddingLeft = UDim.new(0, 10)}).Parent = SearchBox
 
@@ -428,42 +354,6 @@ function Library:CreateWindow(config)
         Name = "Content", Size = UDim2.new(1, -160, 1, -46), Position = UDim2.new(0, 160, 0, 46),
         BackgroundTransparency = 1, Parent = Main,
     })
-
-    if config.LoadingTitle then
-        local LoadingScreen = create("Frame", {
-            Name = "Loading", Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Theme.Background,
-            ZIndex = 100, Parent = ScreenGui,
-        })
-        local LT = create("TextLabel", {
-            Text = config.LoadingTitle, Font = Enum.Font.GothamBold, TextSize = 24,
-            TextColor3 = Theme.Text, BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 30), Position = UDim2.new(0, 0, 0.45, -30),
-            ZIndex = 101, Parent = LoadingScreen,
-        })
-        create("TextLabel", {
-            Text = config.LoadingSubtitle or "กำลังโหลดข้อมูล...", Font = Enum.Font.Gotham, TextSize = 13,
-            TextColor3 = Theme.SubText, BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 20), Position = UDim2.new(0, 0, 0.45, 6),
-            ZIndex = 101, Parent = LoadingScreen,
-        })
-        local BarBG = create("Frame", {
-            Size = UDim2.new(0, 240, 0, 6), Position = UDim2.new(0.5, -120, 0.45, 38),
-            BackgroundColor3 = Theme.Sidebar, ZIndex = 101, Parent = LoadingScreen,
-        }, {corner(3)})
-        local BarFill = create("Frame", {
-            Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = Theme.Accent, ZIndex = 101, Parent = BarBG,
-        }, {corner(3)})
-
-        Main.Visible = false
-        tween(BarFill, {Size = UDim2.new(1, 0, 1, 0)}, 0.9)
-        task.delay(1, function()
-            tween(LoadingScreen, {BackgroundTransparency = 1}, 0.35)
-            tween(LT, {TextTransparency = 1}, 0.35)
-            Main.Visible = true
-            task.wait(0.35)
-            LoadingScreen:Destroy()
-        end)
-    end
 
     local Window = setmetatable({}, {__index = WindowMT})
     Window.ScreenGui = ScreenGui
@@ -517,9 +407,6 @@ function Library:CreateWindow(config)
     return Window
 end
 
---=========================================================
---  WINDOW METHODS
---=========================================================
 WindowMT = {}
 WindowMT.__index = WindowMT
 
@@ -527,9 +414,8 @@ function WindowMT:CreateTab(name, icon)
     local self = self
 
     local TabButton = create("TextButton", {
-        Text = "", Font = Enum.Font.Gotham, TextSize = 14,
-        TextColor3 = Theme.SubText, BackgroundColor3 = Theme.Card,
-        BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36),
+        Text = "", Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = Theme.SubText,
+        BackgroundColor3 = Theme.Card, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36),
         AutoButtonColor = false, Parent = self.TabListHolder,
     }, {corner(8)})
 
@@ -537,18 +423,16 @@ function WindowMT:CreateTab(name, icon)
     local IconImg
     if hasIcon then
         IconImg = create("ImageLabel", {
-            Image = icon, BackgroundTransparency = 1,
-            Size = UDim2.new(0, 18, 0, 18), Position = UDim2.new(0, 12, 0.5, -9),
-            ImageColor3 = Theme.SubText, Parent = TabButton,
+            Image = icon, BackgroundTransparency = 1, Size = UDim2.new(0, 18, 0, 18),
+            Position = UDim2.new(0, 12, 0.5, -9), ImageColor3 = Theme.SubText, Parent = TabButton,
         })
     end
 
     create("TextLabel", {
-        Text = name, Font = Enum.Font.GothamMedium, TextSize = 13,
-        TextColor3 = Theme.SubText, BackgroundTransparency = 1,
-        Size = UDim2.new(1, hasIcon and -38 or -16, 1, 0),
-        Position = UDim2.new(0, hasIcon and 38 or 14, 0, 0),
-        TextXAlignment = Enum.TextXAlignment.Left, Name = "Label", Parent = TabButton,
+        Text = name, Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = Theme.SubText,
+        BackgroundTransparency = 1, Size = UDim2.new(1, hasIcon and -38 or -16, 1, 0),
+        Position = UDim2.new(0, hasIcon and 38 or 14, 0, 0), TextXAlignment = Enum.TextXAlignment.Left,
+        Name = "Label", Parent = TabButton,
     })
 
     local Page = create("ScrollingFrame", {
@@ -649,9 +533,6 @@ function WindowMT:Destroy()
     if self.ScreenGui then self.ScreenGui:Destroy() end
 end
 
---=========================================================
---  TAB METHODS (ครบถ้วนทุกฟังก์ชัน 100%)
---=========================================================
 TabMT = {}
 TabMT.__index = TabMT
 
@@ -661,10 +542,8 @@ end
 
 function TabMT:CreateLabel(text)
     return create("TextLabel", {
-        Text = text, Font = Enum.Font.Gotham, TextSize = 13,
-        TextColor3 = Theme.SubText, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 22), TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = self.Page,
+        Text = text, Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = Theme.SubText,
+        BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), TextXAlignment = Enum.TextXAlignment.Left, Parent = self.Page,
     })
 end
 
@@ -680,10 +559,8 @@ function TabMT:CreateGroupbox(title)
     create("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder}).Parent = Box
     create("TextLabel", {
         Text = title, Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = Theme.Accent,
-        BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 18),
-        TextXAlignment = Enum.TextXAlignment.Left, Parent = Box,
+        BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 18), TextXAlignment = Enum.TextXAlignment.Left, Parent = Box,
     })
-
     local Groupbox = setmetatable({}, {__index = TabMT})
     Groupbox.Page = Box
     Groupbox.Window = self.Window
@@ -691,14 +568,10 @@ function TabMT:CreateGroupbox(title)
 end
 
 function TabMT:CreateSection(text)
-    local Holder = create("Frame", {
-        Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = self.Page,
-    })
+    local Holder = create("Frame", {Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = self.Page})
     create("TextLabel", {
-        Text = text, Font = Enum.Font.GothamBold, TextSize = 13,
-        TextColor3 = Theme.Accent, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 20), TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = Holder,
+        Text = text, Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = Theme.Accent,
+        BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, Parent = Holder,
     })
     create("Frame", {
         Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -2),
@@ -719,29 +592,19 @@ function TabMT:CreateParagraph(title, content)
     create("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}).Parent = Card
 
     local TitleLabel = create("TextLabel", {
-        Text = title, Font = Enum.Font.GothamBold, TextSize = 14,
-        TextColor3 = Theme.Text, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
+        Text = title, Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = Theme.Text,
+        BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
     })
     local ContentLabel = create("TextLabel", {
-        Text = content, Font = Enum.Font.Gotham, TextSize = 13,
-        TextColor3 = Theme.SubText, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        Text = content, Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = Theme.SubText,
+        BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
         TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
     })
 
     return {
         Instance = Card,
-        SetTitle = function(_, newTitle, color)
-            TitleLabel.Text = newTitle
-            if color then TitleLabel.TextColor3 = color end
-        end,
-        SetContent = function(_, newContent, color)
-            ContentLabel.Text = newContent
-            if color then ContentLabel.TextColor3 = color end
-        end,
-        SetTitleColor = function(_, color) TitleLabel.TextColor3 = color end,
-        SetContentColor = function(_, color) ContentLabel.TextColor3 = color end,
+        SetTitle = function(_, newTitle, color) TitleLabel.Text = newTitle; if color then TitleLabel.TextColor3 = color end end,
+        SetContent = function(_, newContent, color) ContentLabel.Text = newContent; if color then ContentLabel.TextColor3 = color end end,
         GetTitle = function() return TitleLabel.Text end,
         GetContent = function() return ContentLabel.Text end,
     }
@@ -756,21 +619,14 @@ function TabMT:CreateText(text)
         PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12),
         PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14), Parent = Card,
     })
-
     local Label = create("TextLabel", {
-        Text = text, Font = Enum.Font.Gotham, TextSize = 14,
-        TextColor3 = Theme.Text, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        Text = text, Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = Theme.Text,
+        BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
         TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, Parent = Card,
     })
-
     return {
         Instance = Card,
-        SetText = function(_, newText, color)
-            Label.Text = newText
-            if color then Label.TextColor3 = color end
-        end,
-        SetColor = function(_, color) Label.TextColor3 = color end,
+        SetText = function(_, newText, color) Label.Text = newText; if color then Label.TextColor3 = color end end,
         GetText = function() return Label.Text end,
     }
 end
@@ -1058,8 +914,7 @@ function TabMT:CreateInput(text, placeholder, callback, flag)
     local Box = create("TextBox", {
         Text = "", PlaceholderText = placeholder or "", Font = Enum.Font.Gotham, TextSize = 13,
         TextColor3 = Theme.Text, PlaceholderColor3 = Theme.SubText, ClearTextOnFocus = false,
-        BackgroundColor3 = Theme.Sidebar, Size = UDim2.new(0.5, -14, 0, 28), Position = UDim2.new(0.5, 0, 0.5, -14),
-        Parent = Card,
+        BackgroundColor3 = Theme.Sidebar, Size = UDim2.new(0.5, -14, 0, 28), Position = UDim2.new(0.5, 0, 0.5, -14), Parent = Card,
     }, {corner(6)})
     create("UIPadding", {PaddingLeft = UDim.new(0, 10)}).Parent = Box
 
@@ -1093,8 +948,7 @@ function TabMT:CreateKeybind(text, defaultKey, callback, flag)
     })
     local KeyBtn = create("TextButton", {
         Text = currentKey.Name, Font = Enum.Font.GothamMedium, TextSize = 13, TextColor3 = Theme.SubText,
-        BackgroundColor3 = Theme.Sidebar, Size = UDim2.new(0, 90, 0, 28), Position = UDim2.new(1, -102, 0.5, -14),
-        Parent = Card,
+        BackgroundColor3 = Theme.Sidebar, Size = UDim2.new(0, 90, 0, 28), Position = UDim2.new(1, -102, 0.5, -14), Parent = Card,
     }, {corner(6)})
 
     KeyBtn.MouseButton1Click:Connect(function()
