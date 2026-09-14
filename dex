@@ -460,25 +460,6 @@ function Library:CreateWindow(config)
     SidebarDivider.BorderSizePixel = 0
     SidebarDivider.Parent = Sidebar
 
-    -- ช่องค้นหาแท็บ
-    local SearchBox = Instance.new("TextBox")
-    SearchBox.Name = "SearchBox"
-    SearchBox.Size = UDim2.new(1, -24, 0, 28)
-    SearchBox.Position = UDim2.new(0, 12, 0, 10)
-    SearchBox.BackgroundColor3 = Theme.Card
-    SearchBox.BackgroundTransparency = 0.35
-    SearchBox.Text = ""
-    SearchBox.PlaceholderText = "🔍 Search tabs..."
-    SearchBox.Font = Enum.Font.Gotham
-    SearchBox.TextSize = 11
-    SearchBox.TextColor3 = Theme.Text
-    SearchBox.PlaceholderColor3 = Theme.SubText
-    SearchBox.ClearTextOnFocus = false
-    SearchBox.Parent = Sidebar
-    Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 6)
-    local SearchStroke = Instance.new("UIStroke", SearchBox) SearchStroke.Color = Theme.Stroke SearchStroke.Transparency = 0.4
-    local SearchPadding = Instance.new("UIPadding", SearchBox) SearchPadding.PaddingLeft = UDim.new(0, 8)
-
     local TabContainer = Instance.new("ScrollingFrame")
     TabContainer.Name = "TabContainer"
     TabContainer.Size = UDim2.new(1, -24, 1, -135)
