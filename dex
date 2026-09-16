@@ -12,6 +12,10 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
+-- ประกาศ forward-reference ไว้ก่อนบนสุด กันปัญหา error กรณีมีการเรียกใช้ WindowMT/TabMT
+-- ก่อนที่โค้ดด้านล่างจะรันมาถึงจุดที่นิยามจริง (โครงสร้างเดิมพึ่ง global เฉยๆ อันนี้ทำให้ปลอดภัยขึ้น)
+local WindowMT, TabMT
+
 --// ธีมสีทั้งหมดที่มีให้ (สลับได้ตอนรันจริง ไม่ต้องแก้โค้ด)
 local ThemePresets = {
     blue = {
@@ -273,6 +277,10 @@ function Library:CreateWindow(config)
     local configName = config.ConfigName or "KarpiwareConfig"
     local themeKey = config.Theme or "blue"
 
+    -- ID ไอคอนโลโก้ที่จะไปโชว์มุมซ้ายบนของ TopBar ข้างชื่อ Hub
+    -- เปลี่ยนได้ทุกครั้งที่เรียกใช้งานผ่าน config.Icon = "rbxassetid://ตัวเลข"
+    local iconId = config.Icon or "rbxassetid://75491720746957"
+
     if ThemePresets[themeKey] then
         for k, v in pairs(ThemePresets[themeKey]) do Theme[k] = v end
     end
@@ -360,10 +368,26 @@ function Library:CreateWindow(config)
     BrandFrame.ZIndex = 11
     BrandFrame.Parent = TopBar
 
+    -- ================= BRAND ICON (โลโก้ Hub) =================
+    -- จุดสำหรับใส่ไอคอน: เปลี่ยนรูปได้ผ่าน config.Icon ตอนเรียก CreateWindow
+    local BrandIcon = Instance.new("ImageLabel")
+    BrandIcon.Name = "BrandIcon"
+    BrandIcon.Size = UDim2.new(0, 30, 0, 30)
+    BrandIcon.Position = UDim2.new(0, 0, 0.5, -15)
+    BrandIcon.BackgroundTransparency = 1
+    BrandIcon.Image = iconId
+    BrandIcon.ScaleType = Enum.ScaleType.Fit
+    BrandIcon.ZIndex = 12
+    BrandIcon.Parent = BrandFrame
+
+    local BrandIconCorner = Instance.new("UICorner")
+    BrandIconCorner.CornerRadius = UDim.new(0, 6)
+    BrandIconCorner.Parent = BrandIcon
+
     local TitleLabel = Instance.new("TextLabel")
     TitleLabel.Name = "TitleLabel"
-    TitleLabel.Size = UDim2.new(1, 0, 0, 18)
-    TitleLabel.Position = UDim2.new(0, 0, 0, 7)
+    TitleLabel.Size = UDim2.new(1, -38, 0, 18)
+    TitleLabel.Position = UDim2.new(0, 38, 0, 7)
     TitleLabel.Text = titleText
     TitleLabel.Font = Enum.Font.GothamBold
     TitleLabel.TextSize = 13
@@ -375,8 +399,8 @@ function Library:CreateWindow(config)
 
     local SubtitleLabel = Instance.new("TextLabel")
     SubtitleLabel.Name = "SubtitleLabel"
-    SubtitleLabel.Size = UDim2.new(1, 0, 0, 14)
-    SubtitleLabel.Position = UDim2.new(0, 0, 0, 25)
+    SubtitleLabel.Size = UDim2.new(1, -38, 0, 14)
+    SubtitleLabel.Position = UDim2.new(0, 38, 0, 25)
     SubtitleLabel.Text = subtitleText
     SubtitleLabel.Font = Enum.Font.Gotham
     SubtitleLabel.TextSize = 10
@@ -687,6 +711,7 @@ function Library:CreateWindow(config)
     Window.Minimized = false
     Window.CurrentTheme = themeKey
     Window.ToggleKey = toggleKey
+    Window.BrandIcon = BrandIcon
 
     Window.AutoSaveEnabled = true
     task.defer(function()
@@ -704,6 +729,13 @@ end
 WindowMT = {}
 WindowMT.__index = WindowMT
 
+-- เปลี่ยนไอคอนโลโก้บน TopBar ทีหลังได้ ไม่ต้องสร้างหน้าต่างใหม่
+function WindowMT:SetIcon(iconId)
+    if self.BrandIcon then
+        self.BrandIcon.Image = iconId
+    end
+end
+
 function WindowMT:CreateTab(name, icon)
     local self = self
 
@@ -716,6 +748,7 @@ function WindowMT:CreateTab(name, icon)
     TabButton.Parent = self.TabListHolder
     Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 6)
 
+    -- ไอคอนของแต่ละแท็บ: ใส่ผ่านพารามิเตอร์ตัวที่ 2 เช่น Window:CreateTab("Main", "rbxassetid://75491720746957")
     local hasIcon = icon ~= nil and icon ~= ""
     local IconImg
     if hasIcon then
@@ -724,6 +757,7 @@ function WindowMT:CreateTab(name, icon)
         IconImg.BackgroundTransparency = 1
         IconImg.Size = UDim2.new(0, 16, 0, 16)
         IconImg.Position = UDim2.new(0, 10, 0.5, -8)
+        IconImg.ScaleType = Enum.ScaleType.Fit
         IconImg.ImageColor3 = Theme.SubText
     end
 
