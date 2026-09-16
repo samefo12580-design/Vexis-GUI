@@ -83,6 +83,20 @@ local function tween(obj, properties, duration, easingStyle)
     return anim
 end
 
+-- ผูกสีของ Instance เข้ากับ "คีย์" ของ Theme ปัจจุบันทันที พร้อมจดจำคีย์นั้นไว้ใน Attribute
+-- ทำให้ตอนเปลี่ยนธีม เรารู้แน่ชัด 100% ว่า property นี้ต้องเปลี่ยนเป็นสีไหนของธีมใหม่
+-- (ไม่ต้องเดาจาก hex สีเดิมแบบระบบเก่า ซึ่งพลาดง่ายถ้าสีชนกันหรือ element ตั้งสีแบบ hardcode)
+local function bindColor(inst, property, themeKey)
+    inst[property] = Theme[themeKey]
+    inst:SetAttribute("Bind_" .. property, themeKey)
+end
+
+-- ใช้ตอนที่ต้อง Tween สีเอง (เช่น Toggle switch ที่ต้องอนิเมชั่นนุ่มๆ)
+-- แค่จดจำคีย์ธีมไว้ใน Attribute โดยไม่ไปยุ่งกับค่าที่ Tween กำลังเคลื่อนอยู่
+local function tagBind(inst, property, themeKey)
+    inst:SetAttribute("Bind_" .. property, themeKey)
+end
+
 local function makeDraggable(topbar, frame)
     local dragging, dragInput, dragStart, startPos
     topbar.InputBegan:Connect(function(input)
@@ -107,17 +121,11 @@ local function makeDraggable(topbar, frame)
 end
 
 -- ระบบเปลี่ยนธีมแบบ Live (รีเฟรชสี UI ทั้งหน้าจอทันทีพร้อม Overlay นุ่มนวล)
-local function repaintTheme(screenGui, oldTheme, newTheme)
+-- อ่าน Attribute "Bind_<Property>" ที่ bindColor/tagBind ฝากไว้ที่ทุก Instance
+-- แล้วเซ็ตสีให้ตรงกับ Theme ปัจจุบันแบบตรงไปตรงมา ไม่ต้องเดาจาก hex สีเดิมอีกต่อไป
+-- วิธีนี้แม่นยำ 100% ไม่ว่าธีมจะมีสีชนกันหรือ element จะซับซ้อนแค่ไหน
+local function repaintTheme(screenGui)
     if not screenGui then return end
-    local lookup = {}
-    for key, oldColor in pairs(oldTheme) do
-        if typeof(oldColor) == "Color3" then
-            lookup[oldColor:ToHex()] = newTheme[key]
-        end
-    end
-    local function remap(color)
-        return lookup[color:ToHex()]
-    end
 
     local overlay = Instance.new("Frame")
     overlay.Size = UDim2.new(1, 0, 1, 0)
@@ -129,28 +137,14 @@ local function repaintTheme(screenGui, oldTheme, newTheme)
 
     task.delay(0.1, function()
         for _, inst in ipairs(screenGui:GetDescendants()) do
-            if inst:IsA("GuiObject") and not inst:IsA("UIStroke") then
-                local ok, bg = pcall(function() return inst.BackgroundColor3 end)
-                if ok then
-                    local newBG = remap(bg)
-                    if newBG then inst.BackgroundColor3 = newBG end
+            for attrName, themeKey in pairs(inst:GetAttributes()) do
+                local property = attrName:match("^Bind_(.+)$")
+                if property and Theme[themeKey] ~= nil then
+                    local ok = pcall(function()
+                        inst[property] = Theme[themeKey]
+                    end)
+                    -- ok ไม่ถูกใช้ต่อ แต่ pcall ป้องกันไม่ให้ Instance ที่ property หลุดไปแล้วทำให้ทั้ง loop พัง
                 end
-            end
-            if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
-                local newTC = remap(inst.TextColor3)
-                if newTC then inst.TextColor3 = newTC end
-                if inst:IsA("TextBox") then
-                    local newPH = remap(inst.PlaceholderColor3)
-                    if newPH then inst.PlaceholderColor3 = newPH end
-                end
-            end
-            if inst:IsA("UIStroke") then
-                local newSC = remap(inst.Color)
-                if newSC then inst.Color = newSC end
-            end
-            if inst:IsA("ScrollingFrame") then
-                local newSB = remap(inst.ScrollBarImageColor3)
-                if newSB then inst.ScrollBarImageColor3 = newSB end
             end
         end
         tween(overlay, {BackgroundTransparency = 1}, 0.2)
@@ -176,13 +170,13 @@ function Library:Notify(title, text, duration)
     local Card = Instance.new("Frame")
     Card.Size = UDim2.new(1, 0, 0, 0)
     Card.AutomaticSize = Enum.AutomaticSize.Y
-    Card.BackgroundColor3 = Theme.Card
+    bindColor(Card, "BackgroundColor3", "Card")
     Card.BackgroundTransparency = 0.35
     Card.ClipsDescendants = true
     Card.Parent = NotifHolder
     
     local Corner = Instance.new("UICorner", Card) Corner.CornerRadius = UDim.new(0, 8)
-    local Stroke = Instance.new("UIStroke", Card) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Card) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local Padding = Instance.new("UIPadding", Card)
     Padding.PaddingTop = UDim.new(0, 10) Padding.PaddingBottom = UDim.new(0, 10)
@@ -195,7 +189,7 @@ function Library:Notify(title, text, duration)
     TitleLbl.Text = title or "แจ้งเตือน"
     TitleLbl.Font = Enum.Font.GothamBold
     TitleLbl.TextSize = 13
-    TitleLbl.TextColor3 = Theme.Text
+    bindColor(TitleLbl, "TextColor3", "Text")
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Size = UDim2.new(1, 0, 0, 18)
     TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -204,7 +198,7 @@ function Library:Notify(title, text, duration)
     DescLbl.Text = text or ""
     DescLbl.Font = Enum.Font.Gotham
     DescLbl.TextSize = 11
-    DescLbl.TextColor3 = Theme.SubText
+    bindColor(DescLbl, "TextColor3", "SubText")
     DescLbl.BackgroundTransparency = 1
     DescLbl.Size = UDim2.new(1, 0, 0, 0)
     DescLbl.AutomaticSize = Enum.AutomaticSize.Y
@@ -306,7 +300,7 @@ function Library:CreateWindow(config)
     -- Tooltip ลอยตามเมาส์
     TooltipFrame = Instance.new("Frame")
     TooltipFrame.Name = "Tooltip"
-    TooltipFrame.BackgroundColor3 = Theme.Card
+    bindColor(TooltipFrame, "BackgroundColor3", "Card")
     TooltipFrame.BackgroundTransparency = 0.2
     TooltipFrame.Visible = false
     TooltipFrame.Size = UDim2.new(0, 0, 0, 0)
@@ -314,7 +308,7 @@ function Library:CreateWindow(config)
     TooltipFrame.ZIndex = 100
     TooltipFrame.Parent = ScreenGui
     Instance.new("UICorner", TooltipFrame).CornerRadius = UDim.new(0, 5)
-    local TooltipStroke = Instance.new("UIStroke", TooltipFrame) TooltipStroke.Color = Theme.Stroke TooltipStroke.Transparency = 0.4
+    local TooltipStroke = Instance.new("UIStroke", TooltipFrame) bindColor(TooltipStroke, "Color", "Stroke") TooltipStroke.Transparency = 0.4
     
     local TooltipPadding = Instance.new("UIPadding", TooltipFrame)
     TooltipPadding.PaddingTop = UDim.new(0, 6) TooltipPadding.PaddingBottom = UDim.new(0, 6)
@@ -324,7 +318,7 @@ function Library:CreateWindow(config)
     TooltipLabel.Text = ""
     TooltipLabel.Font = Enum.Font.Gotham
     TooltipLabel.TextSize = 11
-    TooltipLabel.TextColor3 = Theme.Text
+    bindColor(TooltipLabel, "TextColor3", "Text")
     TooltipLabel.BackgroundTransparency = 1
     TooltipLabel.Size = UDim2.new(0, 0, 0, 0)
     TooltipLabel.AutomaticSize = Enum.AutomaticSize.XY
@@ -335,7 +329,7 @@ function Library:CreateWindow(config)
     MainFrame.Name = "MainFrame"
     MainFrame.Size = UDim2.new(0, 680, 0, 460)
     MainFrame.Position = UDim2.new(0.5, -340, 0.5, -230)
-    MainFrame.BackgroundColor3 = Theme.Background
+    bindColor(MainFrame, "BackgroundColor3", "Background")
     MainFrame.BackgroundTransparency = 0.15
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
@@ -346,7 +340,7 @@ function Library:CreateWindow(config)
     UICorner.Parent = MainFrame
 
     local UIStroke = Instance.new("UIStroke")
-    UIStroke.Color = Theme.Stroke
+    bindColor(UIStroke, "Color", "Stroke")
     UIStroke.Transparency = 0.3
     UIStroke.Thickness = 1
     UIStroke.Parent = MainFrame
@@ -391,7 +385,7 @@ function Library:CreateWindow(config)
     TitleLabel.Text = titleText
     TitleLabel.Font = Enum.Font.GothamBold
     TitleLabel.TextSize = 13
-    TitleLabel.TextColor3 = Theme.Text
+    bindColor(TitleLabel, "TextColor3", "Text")
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.BackgroundTransparency = 1
     TitleLabel.ZIndex = 12
@@ -404,7 +398,7 @@ function Library:CreateWindow(config)
     SubtitleLabel.Text = subtitleText
     SubtitleLabel.Font = Enum.Font.Gotham
     SubtitleLabel.TextSize = 10
-    SubtitleLabel.TextColor3 = Theme.SubText
+    bindColor(SubtitleLabel, "TextColor3", "SubText")
     SubtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     SubtitleLabel.BackgroundTransparency = 1
     SubtitleLabel.ZIndex = 12
@@ -427,12 +421,12 @@ function Library:CreateWindow(config)
 
     local MinimizeBtn = Instance.new("TextButton")
     MinimizeBtn.Size = UDim2.new(0, 26, 0, 26)
-    MinimizeBtn.BackgroundColor3 = Theme.Card
+    bindColor(MinimizeBtn, "BackgroundColor3", "Card")
     MinimizeBtn.BackgroundTransparency = 0.3
     MinimizeBtn.Text = "-"
     MinimizeBtn.Font = Enum.Font.GothamBold
     MinimizeBtn.TextSize = 14
-    MinimizeBtn.TextColor3 = Theme.SubText
+    bindColor(MinimizeBtn, "TextColor3", "SubText")
     MinimizeBtn.AutoButtonColor = false
     MinimizeBtn.ZIndex = 12
     MinimizeBtn.Parent = WindowControls
@@ -440,12 +434,12 @@ function Library:CreateWindow(config)
 
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Size = UDim2.new(0, 26, 0, 26)
-    CloseBtn.BackgroundColor3 = Theme.Card
+    bindColor(CloseBtn, "BackgroundColor3", "Card")
     CloseBtn.BackgroundTransparency = 0.3
     CloseBtn.Text = "×"
     CloseBtn.Font = Enum.Font.GothamBold
     CloseBtn.TextSize = 16
-    CloseBtn.TextColor3 = Theme.SubText
+    bindColor(CloseBtn, "TextColor3", "SubText")
     CloseBtn.AutoButtonColor = false
     CloseBtn.ZIndex = 12
     CloseBtn.Parent = WindowControls
@@ -456,7 +450,7 @@ function Library:CreateWindow(config)
     local TopDivider = Instance.new("Frame")
     TopDivider.Size = UDim2.new(1, 0, 0, 1)
     TopDivider.Position = UDim2.new(0, 0, 0, 48)
-    TopDivider.BackgroundColor3 = Theme.Stroke
+    bindColor(TopDivider, "BackgroundColor3", "Stroke")
     TopDivider.BackgroundTransparency = 0.3
     TopDivider.BorderSizePixel = 0
     TopDivider.Parent = MainFrame
@@ -466,7 +460,7 @@ function Library:CreateWindow(config)
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 210, 1, -49)
     Sidebar.Position = UDim2.new(0, 0, 0, 49)
-    Sidebar.BackgroundColor3 = Theme.Sidebar
+    bindColor(Sidebar, "BackgroundColor3", "Sidebar")
     Sidebar.BackgroundTransparency = 0.25
     Sidebar.BorderSizePixel = 0
     Sidebar.ClipsDescendants = true
@@ -479,7 +473,7 @@ function Library:CreateWindow(config)
     local SidebarDivider = Instance.new("Frame")
     SidebarDivider.Size = UDim2.new(0, 1, 1, 0)
     SidebarDivider.Position = UDim2.new(1, -1, 0, 0)
-    SidebarDivider.BackgroundColor3 = Theme.Stroke
+    bindColor(SidebarDivider, "BackgroundColor3", "Stroke")
     SidebarDivider.BackgroundTransparency = 0.3
     SidebarDivider.BorderSizePixel = 0
     SidebarDivider.Parent = Sidebar
@@ -502,7 +496,7 @@ function Library:CreateWindow(config)
     UserProfileFrame.Name = "UserProfile"
     UserProfileFrame.Size = UDim2.new(1, -24, 0, 52)
     UserProfileFrame.Position = UDim2.new(0, 12, 1, -62)
-    UserProfileFrame.BackgroundColor3 = Theme.Card
+    bindColor(UserProfileFrame, "BackgroundColor3", "Card")
     UserProfileFrame.BackgroundTransparency = 0.35
     UserProfileFrame.BorderSizePixel = 0
     UserProfileFrame.Parent = Sidebar
@@ -512,7 +506,7 @@ function Library:CreateWindow(config)
     ProfileCorner.Parent = UserProfileFrame
 
     local ProfileStroke = Instance.new("UIStroke")
-    ProfileStroke.Color = Theme.Stroke
+    bindColor(ProfileStroke, "Color", "Stroke")
     ProfileStroke.Transparency = 0.4
     ProfileStroke.Thickness = 1
     ProfileStroke.Parent = UserProfileFrame
@@ -550,7 +544,7 @@ function Library:CreateWindow(config)
     UsernameLabel.Text = LocalPlayer.DisplayName
     UsernameLabel.Font = Enum.Font.GothamBold
     UsernameLabel.TextSize = 11
-    UsernameLabel.TextColor3 = Theme.Text
+    bindColor(UsernameLabel, "TextColor3", "Text")
     UsernameLabel.TextXAlignment = Enum.TextXAlignment.Left
     UsernameLabel.TextTruncate = Enum.TextTruncate.AtEnd
     UsernameLabel.BackgroundTransparency = 1
@@ -562,7 +556,7 @@ function Library:CreateWindow(config)
     UptimeLabel.Text = "Uptime: 00:00:00"
     UptimeLabel.Font = Enum.Font.Gotham
     UptimeLabel.TextSize = 9
-    UptimeLabel.TextColor3 = Theme.SubText
+    bindColor(UptimeLabel, "TextColor3", "SubText")
     UptimeLabel.TextXAlignment = Enum.TextXAlignment.Left
     UptimeLabel.BackgroundTransparency = 1
     UptimeLabel.Parent = UserProfileFrame
@@ -600,12 +594,12 @@ function Library:CreateWindow(config)
     local ModalCard = Instance.new("Frame")
     ModalCard.Size = UDim2.new(0, 260, 0, 130)
     ModalCard.Position = UDim2.new(0.5, -130, 0.5, -65)
-    ModalCard.BackgroundColor3 = Theme.Background
+    bindColor(ModalCard, "BackgroundColor3", "Background")
     ModalCard.BackgroundTransparency = 0.1
     ModalCard.ZIndex = 101
     ModalCard.Parent = ModalOverlay
     Instance.new("UICorner", ModalCard).CornerRadius = UDim.new(0, 8)
-    local ModalStroke = Instance.new("UIStroke") ModalStroke.Color = Theme.Stroke ModalStroke.Transparency = 0.3 ModalStroke.Parent = ModalCard
+    local ModalStroke = Instance.new("UIStroke") bindColor(ModalStroke, "Color", "Stroke") ModalStroke.Transparency = 0.3 ModalStroke.Parent = ModalCard
 
     local ModalTitle = Instance.new("TextLabel")
     ModalTitle.Size = UDim2.new(1, -20, 0, 24)
@@ -613,7 +607,7 @@ function Library:CreateWindow(config)
     ModalTitle.Text = "Exit Confirmation"
     ModalTitle.Font = Enum.Font.GothamBold
     ModalTitle.TextSize = 13
-    ModalTitle.TextColor3 = Theme.Text
+    bindColor(ModalTitle, "TextColor3", "Text")
     ModalTitle.BackgroundTransparency = 1
     ModalTitle.ZIndex = 102
     ModalTitle.Parent = ModalCard
@@ -624,7 +618,7 @@ function Library:CreateWindow(config)
     ModalDesc.Text = "Are you sure you want to close the menu?"
     ModalDesc.Font = Enum.Font.Gotham
     ModalDesc.TextSize = 11
-    ModalDesc.TextColor3 = Theme.SubText
+    bindColor(ModalDesc, "TextColor3", "SubText")
     ModalDesc.BackgroundTransparency = 1
     ModalDesc.ZIndex = 102
     ModalDesc.Parent = ModalCard
@@ -638,7 +632,7 @@ function Library:CreateWindow(config)
 
     local ConfirmExitBtn = Instance.new("TextButton")
     ConfirmExitBtn.Size = UDim2.new(0.48, 0, 1, 0)
-    ConfirmExitBtn.BackgroundColor3 = Theme.Error
+    bindColor(ConfirmExitBtn, "BackgroundColor3", "Error")
     ConfirmExitBtn.BackgroundTransparency = 0.1
     ConfirmExitBtn.Text = "Close"
     ConfirmExitBtn.Font = Enum.Font.GothamBold
@@ -651,12 +645,12 @@ function Library:CreateWindow(config)
     local CancelExitBtn = Instance.new("TextButton")
     CancelExitBtn.Size = UDim2.new(0.48, 0, 1, 0)
     CancelExitBtn.Position = UDim2.new(0.52, 0, 0, 0)
-    CancelExitBtn.BackgroundColor3 = Theme.Card
+    bindColor(CancelExitBtn, "BackgroundColor3", "Card")
     CancelExitBtn.BackgroundTransparency = 0.3
     CancelExitBtn.Text = "Cancel"
     CancelExitBtn.Font = Enum.Font.GothamMedium
     CancelExitBtn.TextSize = 11
-    CancelExitBtn.TextColor3 = Theme.Text
+    bindColor(CancelExitBtn, "TextColor3", "Text")
     CancelExitBtn.ZIndex = 103
     CancelExitBtn.Parent = ModalBtnContainer
     Instance.new("UICorner", CancelExitBtn).CornerRadius = UDim.new(0, 6)
@@ -741,7 +735,7 @@ function WindowMT:CreateTab(name, icon)
 
     local TabButton = Instance.new("TextButton")
     TabButton.Size = UDim2.new(1, 0, 0, 34)
-    TabButton.BackgroundColor3 = Theme.Card
+    bindColor(TabButton, "BackgroundColor3", "Card")
     TabButton.BackgroundTransparency = 1
     TabButton.Text = ""
     TabButton.AutoButtonColor = false
@@ -758,7 +752,7 @@ function WindowMT:CreateTab(name, icon)
         IconImg.Size = UDim2.new(0, 16, 0, 16)
         IconImg.Position = UDim2.new(0, 10, 0.5, -8)
         IconImg.ScaleType = Enum.ScaleType.Fit
-        IconImg.ImageColor3 = Theme.SubText
+        bindColor(IconImg, "ImageColor3", "SubText")
     end
 
     local Label = Instance.new("TextLabel", TabButton)
@@ -766,7 +760,7 @@ function WindowMT:CreateTab(name, icon)
     Label.Text = name
     Label.Font = Enum.Font.GothamMedium
     Label.TextSize = 13
-    Label.TextColor3 = Theme.SubText
+    bindColor(Label, "TextColor3", "SubText")
     Label.BackgroundTransparency = 1
     Label.Size = UDim2.new(1, hasIcon and -34 or -12, 1, 0)
     Label.Position = UDim2.new(0, hasIcon and 34 or 12, 0, 0)
@@ -777,7 +771,7 @@ function WindowMT:CreateTab(name, icon)
     Page.Size = UDim2.new(1, 0, 1, 0)
     Page.BackgroundTransparency = 1
     Page.ScrollBarThickness = 2
-    Page.ScrollBarImageColor3 = Theme.Stroke
+    bindColor(Page, "ScrollBarImageColor3", "Stroke")
     Page.CanvasSize = UDim2.new(0, 0, 0, 0)
     Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
     Page.Visible = false
@@ -785,7 +779,7 @@ function WindowMT:CreateTab(name, icon)
 
     local CardSection = Instance.new("Frame")
     CardSection.Size = UDim2.new(1, -8, 0, 0)
-    CardSection.BackgroundColor3 = Theme.Card
+    bindColor(CardSection, "BackgroundColor3", "Card")
     CardSection.BackgroundTransparency = 0.35
     CardSection.Parent = Page
     
@@ -793,7 +787,7 @@ function WindowMT:CreateTab(name, icon)
     CardCorner.CornerRadius = UDim.new(0, 8)
 
     local CardStroke = Instance.new("UIStroke", CardSection)
-    CardStroke.Color = Theme.Stroke
+    bindColor(CardStroke, "Color", "Stroke")
     CardStroke.Transparency = 0.4
     CardStroke.Thickness = 1
 
@@ -823,13 +817,13 @@ function WindowMT:CreateTab(name, icon)
         for _, t in pairs(self.Tabs) do
             t.MainPage.Visible = false
             tween(t.Button, {BackgroundTransparency = 1}, 0.15)
-            t.Button.Label.TextColor3 = Theme.SubText
-            if t.IconImg then t.IconImg.ImageColor3 = Theme.SubText end
+            bindColor(t.Button.Label, "TextColor3", "SubText")
+            if t.IconImg then bindColor(t.IconImg, "ImageColor3", "SubText") end
         end
         Page.Visible = true
         tween(TabButton, {BackgroundTransparency = 0.3}, 0.15)
-        Label.TextColor3 = Theme.Text
-        if IconImg then IconImg.ImageColor3 = Theme.Accent end
+        bindColor(Label, "TextColor3", "Text")
+        if IconImg then bindColor(IconImg, "ImageColor3", "Accent") end
         self.ActiveTab = Tab
     end
 
@@ -892,13 +886,10 @@ function WindowMT:SetTheme(themeKey)
     local preset = ThemePresets[themeKey]
     if not preset then return end
 
-    local oldTheme = {}
-    for k, v in pairs(Theme) do oldTheme[k] = v end
-
     for k, v in pairs(preset) do Theme[k] = v end
     self.CurrentTheme = themeKey
 
-    repaintTheme(self.ScreenGui, oldTheme, Theme)
+    repaintTheme(self.ScreenGui)
     Library:Notify("ธีม", "เปลี่ยนเป็น " .. (preset.DisplayName or themeKey), 2)
 end
 
@@ -917,23 +908,27 @@ local function registerFlag(tab, flag, element)
 end
 
 function TabMT:CreateLabel(text)
-    return Instance.new("TextLabel", {
-        Text = text, Font = Enum.Font.Gotham, TextSize = 12,
-        TextColor3 = Theme.SubText, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 18), TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = self.Page,
-    })
+    local Label = Instance.new("TextLabel")
+    Label.Text = text
+    Label.Font = Enum.Font.Gotham
+    Label.TextSize = 12
+    bindColor(Label, "TextColor3", "SubText")
+    Label.BackgroundTransparency = 1
+    Label.Size = UDim2.new(1, 0, 0, 18)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = self.Page
+    return Label
 end
 
 function TabMT:CreateGroupbox(title)
     local Box = Instance.new("Frame")
     Box.Size = UDim2.new(1, 0, 0, 0)
     Box.AutomaticSize = Enum.AutomaticSize.Y
-    Box.BackgroundColor3 = Theme.Sidebar
+    bindColor(Box, "BackgroundColor3", "Sidebar")
     Box.BackgroundTransparency = 0.35
     Box.Parent = self.Page
     Instance.new("UICorner", Box).CornerRadius = UDim.new(0, 6)
-    local Stroke = Instance.new("UIStroke", Box) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Box) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local Padding = Instance.new("UIPadding", Box)
     Padding.PaddingTop = UDim.new(0, 10) Padding.PaddingBottom = UDim.new(0, 10)
@@ -946,7 +941,7 @@ function TabMT:CreateGroupbox(title)
     TitleLbl.Text = title
     TitleLbl.Font = Enum.Font.GothamBold
     TitleLbl.TextSize = 12
-    TitleLbl.TextColor3 = Theme.Accent
+    bindColor(TitleLbl, "TextColor3", "Accent")
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Size = UDim2.new(1, 0, 0, 16)
     TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -967,7 +962,7 @@ function TabMT:CreateSection(text)
     TitleLbl.Text = text
     TitleLbl.Font = Enum.Font.GothamBold
     TitleLbl.TextSize = 12
-    TitleLbl.TextColor3 = Theme.Accent
+    bindColor(TitleLbl, "TextColor3", "Accent")
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Size = UDim2.new(1, 0, 0, 18)
     TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -975,7 +970,7 @@ function TabMT:CreateSection(text)
     local Line = Instance.new("Frame", Holder)
     Line.Size = UDim2.new(1, 0, 0, 1)
     Line.Position = UDim2.new(0, 0, 1, -2)
-    Line.BackgroundColor3 = Theme.Stroke
+    bindColor(Line, "BackgroundColor3", "Stroke")
     Line.BorderSizePixel = 0
     return Holder
 end
@@ -984,11 +979,11 @@ function TabMT:CreateParagraph(title, content)
     local Card = Instance.new("Frame")
     Card.Size = UDim2.new(1, 0, 0, 0)
     Card.AutomaticSize = Enum.AutomaticSize.Y
-    Card.BackgroundColor3 = Theme.Sidebar
+    bindColor(Card, "BackgroundColor3", "Sidebar")
     Card.BackgroundTransparency = 0.35
     Card.Parent = self.Page
     Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
-    local Stroke = Instance.new("UIStroke", Card) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Card) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local Padding = Instance.new("UIPadding", Card)
     Padding.PaddingTop = UDim.new(0, 10) Padding.PaddingBottom = UDim.new(0, 10)
@@ -1001,7 +996,7 @@ function TabMT:CreateParagraph(title, content)
     TitleLabel.Text = title
     TitleLabel.Font = Enum.Font.GothamBold
     TitleLabel.TextSize = 13
-    TitleLabel.TextColor3 = Theme.Text
+    bindColor(TitleLabel, "TextColor3", "Text")
     TitleLabel.BackgroundTransparency = 1
     TitleLabel.Size = UDim2.new(1, 0, 0, 18)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1010,7 +1005,7 @@ function TabMT:CreateParagraph(title, content)
     ContentLabel.Text = content
     ContentLabel.Font = Enum.Font.Gotham
     ContentLabel.TextSize = 11
-    ContentLabel.TextColor3 = Theme.SubText
+    bindColor(ContentLabel, "TextColor3", "SubText")
     ContentLabel.BackgroundTransparency = 1
     ContentLabel.Size = UDim2.new(1, 0, 0, 0)
     ContentLabel.AutomaticSize = Enum.AutomaticSize.Y
@@ -1028,11 +1023,11 @@ function TabMT:CreateText(text)
     local Card = Instance.new("Frame")
     Card.Size = UDim2.new(1, 0, 0, 0)
     Card.AutomaticSize = Enum.AutomaticSize.Y
-    Card.BackgroundColor3 = Theme.Sidebar
+    bindColor(Card, "BackgroundColor3", "Sidebar")
     Card.BackgroundTransparency = 0.35
     Card.Parent = self.Page
     Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
-    local Stroke = Instance.new("UIStroke", Card) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Card) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local Padding = Instance.new("UIPadding", Card)
     Padding.PaddingTop = UDim.new(0, 10) Padding.PaddingBottom = UDim.new(0, 10)
@@ -1042,7 +1037,7 @@ function TabMT:CreateText(text)
     Label.Text = text
     Label.Font = Enum.Font.Gotham
     Label.TextSize = 12
-    Label.TextColor3 = Theme.Text
+    bindColor(Label, "TextColor3", "Text")
     Label.BackgroundTransparency = 1
     Label.Size = UDim2.new(1, 0, 0, 0)
     Label.AutomaticSize = Enum.AutomaticSize.Y
@@ -1059,23 +1054,23 @@ function TabMT:CreateButton(text, callback)
     callback = callback or function() end
     local Btn = Instance.new("TextButton")
     Btn.Size = UDim2.new(1, 0, 0, 32)
-    Btn.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    bindColor(Btn, "BackgroundColor3", "Card")
     Btn.BackgroundTransparency = 0.3
     Btn.Text = text
     Btn.Font = Enum.Font.GothamMedium
     Btn.TextSize = 12
-    Btn.TextColor3 = Theme.Text
+    bindColor(Btn, "TextColor3", "Text")
     Btn.AutoButtonColor = false
     Btn.Parent = self.Page
 
     Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
     local Stroke = Instance.new("UIStroke", Btn)
-    Stroke.Color = Theme.Stroke
+    bindColor(Stroke, "Color", "Stroke")
     Stroke.Transparency = 0.4
 
     Btn.MouseButton1Click:Connect(function()
         tween(Btn, {BackgroundColor3 = Theme.CardHover}, 0.08)
-        task.delay(0.12, function() tween(Btn, {BackgroundColor3 = Color3.fromRGB(32, 32, 32)}, 0.15) end)
+        task.delay(0.12, function() tween(Btn, {BackgroundColor3 = Theme.Card}, 0.15) end)
         callback()
     end)
     return Btn
@@ -1100,21 +1095,21 @@ function TabMT:CreateToggle(text, default, callback, flag)
     Label.Text = text
     Label.Font = Enum.Font.Gotham
     Label.TextSize = 12
-    Label.TextColor3 = Theme.Text
+    bindColor(Label, "TextColor3", "Text")
     Label.TextXAlignment = Enum.TextXAlignment.Left
     Label.BackgroundTransparency = 1
 
     local Switch = Instance.new("Frame", ToggleFrame)
     Switch.Size = UDim2.new(0, 36, 0, 18)
     Switch.Position = UDim2.new(1, -36, 0.5, -9)
-    Switch.BackgroundColor3 = state and Color3.fromRGB(240, 240, 240) or Color3.fromRGB(45, 45, 45)
+    bindColor(Switch, "BackgroundColor3", state and "Accent" or "CardHover")
     Switch.BackgroundTransparency = state and 0 or 0.3
     Instance.new("UICorner", Switch).CornerRadius = UDim.new(1, 0)
 
     local Knob = Instance.new("Frame", Switch)
     Knob.Size = UDim2.new(0, 12, 0, 12)
     Knob.Position = state and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
-    Knob.BackgroundColor3 = state and Color3.fromRGB(20, 20, 20) or Color3.fromRGB(180, 180, 180)
+    bindColor(Knob, "BackgroundColor3", state and "Background" or "SubText")
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
 
     local ClickBtn = Instance.new("TextButton", ToggleFrame)
@@ -1123,14 +1118,22 @@ function TabMT:CreateToggle(text, default, callback, flag)
     ClickBtn.Text = ""
 
     local function updateVisual()
+        local switchKey = state and "Accent" or "CardHover"
+        local knobKey = state and "Background" or "SubText"
+
         tween(Switch, {
-            BackgroundColor3 = state and Color3.fromRGB(240, 240, 240) or Color3.fromRGB(45, 45, 45),
+            BackgroundColor3 = Theme[switchKey],
             BackgroundTransparency = state and 0 or 0.3
         }, 0.15)
         tween(Knob, {
             Position = state and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6),
-            BackgroundColor3 = state and Color3.fromRGB(20, 20, 20) or Color3.fromRGB(180, 180, 180)
+            BackgroundColor3 = Theme[knobKey]
         }, 0.15)
+
+        -- อัปเดต Attribute ตามสถานะล่าสุด เพื่อให้สลับธีมทีหลังยังรีเฟรชสีถูกต้อง
+        -- แม้ว่าตอนนั้น Toggle จะอยู่สถานะ ON หรือ OFF ก็ตาม
+        tagBind(Switch, "BackgroundColor3", switchKey)
+        tagBind(Knob, "BackgroundColor3", knobKey)
     end
 
     ClickBtn.MouseButton1Click:Connect(function()
@@ -1167,14 +1170,14 @@ function TabMT:CreateSlider(text, min, max, default, callback, flag)
     Label.Text = text
     Label.Font = Enum.Font.Gotham
     Label.TextSize = 12
-    Label.TextColor3 = Theme.Text
+    bindColor(Label, "TextColor3", "Text")
     Label.TextXAlignment = Enum.TextXAlignment.Left
     Label.BackgroundTransparency = 1
 
     local ValueBox = Instance.new("Frame", SliderFrame)
     ValueBox.Size = UDim2.new(0, 42, 0, 22)
     ValueBox.Position = UDim2.new(1, -42, 0.5, -11)
-    ValueBox.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    bindColor(ValueBox, "BackgroundColor3", "Card")
     ValueBox.BackgroundTransparency = 0.3
     Instance.new("UICorner", ValueBox).CornerRadius = UDim.new(0, 4)
 
@@ -1183,19 +1186,19 @@ function TabMT:CreateSlider(text, min, max, default, callback, flag)
     ValueLabel.Text = tostring(value)
     ValueLabel.Font = Enum.Font.Gotham
     ValueLabel.TextSize = 11
-    ValueLabel.TextColor3 = Theme.Text
+    bindColor(ValueLabel, "TextColor3", "Text")
     ValueLabel.BackgroundTransparency = 1
 
     local Track = Instance.new("Frame", SliderFrame)
     Track.Size = UDim2.new(0.6, -95, 0, 4)
     Track.Position = UDim2.new(0.4, 10, 0.5, -2)
-    Track.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    bindColor(Track, "BackgroundColor3", "Stroke")
     Track.BackgroundTransparency = 0.3
     Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
 
     local Fill = Instance.new("Frame", Track)
     Fill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
-    Fill.BackgroundColor3 = Theme.Accent
+    bindColor(Fill, "BackgroundColor3", "Accent")
     Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
 
     local Knob = Instance.new("Frame", Fill)
@@ -1256,18 +1259,18 @@ function TabMT:CreateDropdown(text, options, default, callback, flag)
 
     local Card = Instance.new("Frame")
     Card.Size = UDim2.new(1, 0, 0, 36)
-    Card.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    bindColor(Card, "BackgroundColor3", "Card")
     Card.BackgroundTransparency = 0.3
     Card.ClipsDescendants = true
     Card.Parent = self.Page
     Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
-    local Stroke = Instance.new("UIStroke", Card) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Card) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local TitleLbl = Instance.new("TextLabel", Card)
     TitleLbl.Text = text
     TitleLbl.Font = Enum.Font.Gotham
     TitleLbl.TextSize = 12
-    TitleLbl.TextColor3 = Theme.Text
+    bindColor(TitleLbl, "TextColor3", "Text")
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Size = UDim2.new(1, -100, 0, 36)
     TitleLbl.Position = UDim2.new(0, 12, 0, 0)
@@ -1277,7 +1280,7 @@ function TabMT:CreateDropdown(text, options, default, callback, flag)
     SelectedLabel.Text = tostring(selected)
     SelectedLabel.Font = Enum.Font.Gotham
     SelectedLabel.TextSize = 11
-    SelectedLabel.TextColor3 = Theme.SubText
+    bindColor(SelectedLabel, "TextColor3", "SubText")
     SelectedLabel.BackgroundTransparency = 1
     SelectedLabel.Size = UDim2.new(0, 90, 0, 36)
     SelectedLabel.Position = UDim2.new(1, -98, 0, 0)
@@ -1295,24 +1298,38 @@ function TabMT:CreateDropdown(text, options, default, callback, flag)
     local OptLayout = Instance.new("UIListLayout", OptionsHolder)
     OptLayout.Padding = UDim.new(0, 2) OptLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-    for _, optionName in ipairs(options) do
-        local OptBtn = Instance.new("TextButton", OptionsHolder)
-        OptBtn.Text = optionName
-        OptBtn.Font = Enum.Font.Gotham
-        OptBtn.TextSize = 11
-        OptBtn.TextColor3 = Theme.Text
-        OptBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        OptBtn.Size = UDim2.new(1, 0, 0, 24)
-        Instance.new("UICorner", OptBtn).CornerRadius = UDim.new(0, 4)
+    -- สร้างปุ่มตัวเลือกทั้งหมดจากลิสต์ options ปัจจุบัน
+    -- แยกเป็นฟังก์ชันเพื่อให้ SetValues/Refresh เรียกซ้ำเพื่อ "รีเฟรช" รายการได้
+    local function buildOptions()
+        for _, child in ipairs(OptionsHolder:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
 
-        OptBtn.MouseButton1Click:Connect(function()
-            selected = optionName
-            SelectedLabel.Text = optionName
-            callback(selected)
-            open = false
-            tween(Card, {Size = UDim2.new(1, 0, 0, 36)}, 0.15)
-        end)
+        for _, optionName in ipairs(options) do
+            local OptBtn = Instance.new("TextButton", OptionsHolder)
+            OptBtn.Text = optionName
+            OptBtn.Font = Enum.Font.Gotham
+            OptBtn.TextSize = 11
+            bindColor(OptBtn, "TextColor3", "Text")
+            bindColor(OptBtn, "BackgroundColor3", "CardHover")
+            OptBtn.Size = UDim2.new(1, 0, 0, 24)
+            Instance.new("UICorner", OptBtn).CornerRadius = UDim.new(0, 4)
+
+            OptBtn.MouseButton1Click:Connect(function()
+                selected = optionName
+                SelectedLabel.Text = optionName
+                callback(selected)
+                open = false
+                tween(Card, {Size = UDim2.new(1, 0, 0, 36)}, 0.15)
+            end)
+        end
+
+        OptionsHolder.Size = UDim2.new(1, -16, 0, #options * 26)
     end
+
+    buildOptions()
 
     ClickArea.MouseButton1Click:Connect(function()
         open = not open
@@ -1320,9 +1337,29 @@ function TabMT:CreateDropdown(text, options, default, callback, flag)
         tween(Card, {Size = UDim2.new(1, 0, 0, targetHeight)}, 0.15)
     end)
 
+    local function setValues(newOptions)
+        options = newOptions or {}
+        buildOptions()
+        -- ถ้าค่าที่เลือกไว้เดิมหายไปจากลิสต์ใหม่ ให้รีเซ็ตเป็นค่าว่าง/ตัวแรก กันค่าเก่าค้าง
+        local stillExists = false
+        for _, v in ipairs(options) do
+            if v == selected then stillExists = true break end
+        end
+        if not stillExists then
+            selected = options[1] or ""
+            SelectedLabel.Text = tostring(selected)
+        end
+        -- ถ้าเมนูเปิดอยู่ตอนรีเฟรช ให้ปรับความสูงให้ตรงกับจำนวนตัวเลือกใหม่ทันที
+        if open then
+            tween(Card, {Size = UDim2.new(1, 0, 0, 40 + #options * 26 + 6)}, 0.15)
+        end
+    end
+
     local Obj = {
         Set = function(_, value) selected = value; SelectedLabel.Text = tostring(value); callback(selected) end,
         Get = function() return selected end,
+        SetValues = function(_, newOptions) setValues(newOptions) end,
+        Refresh = function(_, newOptions) setValues(newOptions) end, -- alias เผื่อโค้ดเรียกชื่อนี้
     }
     registerFlag(self, flag, Obj)
     return Obj
@@ -1342,17 +1379,17 @@ function TabMT:CreateMultiDropdown(text, options, defaults, callback, flag)
 
     local Card = Instance.new("Frame", self.Page)
     Card.Size = UDim2.new(1, 0, 0, 36)
-    Card.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    bindColor(Card, "BackgroundColor3", "Card")
     Card.BackgroundTransparency = 0.3
     Card.ClipsDescendants = true
     Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
-    local Stroke = Instance.new("UIStroke", Card) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Card) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local TitleLbl = Instance.new("TextLabel", Card)
     TitleLbl.Text = text
     TitleLbl.Font = Enum.Font.Gotham
     TitleLbl.TextSize = 12
-    TitleLbl.TextColor3 = Theme.Text
+    bindColor(TitleLbl, "TextColor3", "Text")
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Size = UDim2.new(1, -40, 0, 36)
     TitleLbl.Position = UDim2.new(0, 12, 0, 0)
@@ -1370,8 +1407,8 @@ function TabMT:CreateMultiDropdown(text, options, defaults, callback, flag)
     local OptLayout = Instance.new("UIListLayout", OptionsHolder)
     OptLayout.Padding = UDim.new(0, 2) OptLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-    local function buttonColor(optionName)
-        return selected[optionName] and Theme.Accent or Color3.fromRGB(40, 40, 40)
+    local function buttonColorKey(optionName)
+        return selected[optionName] and "Accent" or "CardHover"
     end
 
     for _, optionName in ipairs(options) do
@@ -1379,14 +1416,16 @@ function TabMT:CreateMultiDropdown(text, options, defaults, callback, flag)
         OptBtn.Text = optionName
         OptBtn.Font = Enum.Font.Gotham
         OptBtn.TextSize = 11
-        OptBtn.TextColor3 = Theme.Text
-        OptBtn.BackgroundColor3 = buttonColor(optionName)
+        bindColor(OptBtn, "TextColor3", "Text")
+        bindColor(OptBtn, "BackgroundColor3", buttonColorKey(optionName))
         OptBtn.Size = UDim2.new(1, 0, 0, 24)
         Instance.new("UICorner", OptBtn).CornerRadius = UDim.new(0, 4)
 
         OptBtn.MouseButton1Click:Connect(function()
             selected[optionName] = not selected[optionName]
-            tween(OptBtn, {BackgroundColor3 = buttonColor(optionName)}, 0.15)
+            local key = buttonColorKey(optionName)
+            tween(OptBtn, {BackgroundColor3 = Theme[key]}, 0.15)
+            tagBind(OptBtn, "BackgroundColor3", key)
             local list = {}
             for name, isSel in pairs(selected) do if isSel then table.insert(list, name) end end
             callback(list)
@@ -1404,7 +1443,11 @@ function TabMT:CreateMultiDropdown(text, options, defaults, callback, flag)
             selected = {}
             for _, v in ipairs(list) do selected[v] = true end
             for _, child in ipairs(OptionsHolder:GetChildren()) do
-                if child:IsA("TextButton") then tween(child, {BackgroundColor3 = buttonColor(child.Text)}, 0.15) end
+                if child:IsA("TextButton") then
+                    local key = buttonColorKey(child.Text)
+                    tween(child, {BackgroundColor3 = Theme[key]}, 0.15)
+                    tagBind(child, "BackgroundColor3", key)
+                end
             end
             callback(list)
         end,
@@ -1428,16 +1471,16 @@ function TabMT:CreateInput(text, placeholder, callback, flag)
 
     local Card = Instance.new("Frame", self.Page)
     Card.Size = UDim2.new(1, 0, 0, 36)
-    Card.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    bindColor(Card, "BackgroundColor3", "Card")
     Card.BackgroundTransparency = 0.3
     Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
-    local Stroke = Instance.new("UIStroke", Card) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Card) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local TitleLbl = Instance.new("TextLabel", Card)
     TitleLbl.Text = text
     TitleLbl.Font = Enum.Font.Gotham
     TitleLbl.TextSize = 12
-    TitleLbl.TextColor3 = Theme.Text
+    bindColor(TitleLbl, "TextColor3", "Text")
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Size = UDim2.new(0.4, 0, 1, 0)
     TitleLbl.Position = UDim2.new(0, 12, 0, 0)
@@ -1448,10 +1491,10 @@ function TabMT:CreateInput(text, placeholder, callback, flag)
     Box.PlaceholderText = placeholder or ""
     Box.Font = Enum.Font.Gotham
     Box.TextSize = 11
-    Box.TextColor3 = Theme.Text
-    Box.PlaceholderColor3 = Theme.SubText
+    bindColor(Box, "TextColor3", "Text")
+    bindColor(Box, "PlaceholderColor3", "SubText")
     Box.ClearTextOnFocus = false
-    Box.BackgroundColor3 = Theme.Sidebar
+    bindColor(Box, "BackgroundColor3", "Sidebar")
     Box.Size = UDim2.new(0.5, -12, 0, 26)
     Box.Position = UDim2.new(0.5, 0, 0.5, -13)
     Instance.new("UICorner", Box).CornerRadius = UDim.new(0, 5)
@@ -1481,16 +1524,16 @@ function TabMT:CreateKeybind(text, defaultKey, callback, flag)
 
     local Card = Instance.new("Frame", self.Page)
     Card.Size = UDim2.new(1, 0, 0, 36)
-    Card.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    bindColor(Card, "BackgroundColor3", "Card")
     Card.BackgroundTransparency = 0.3
     Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
-    local Stroke = Instance.new("UIStroke", Card) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Card) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local TitleLbl = Instance.new("TextLabel", Card)
     TitleLbl.Text = text
     TitleLbl.Font = Enum.Font.Gotham
     TitleLbl.TextSize = 12
-    TitleLbl.TextColor3 = Theme.Text
+    bindColor(TitleLbl, "TextColor3", "Text")
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Size = UDim2.new(1, -100, 1, 0)
     TitleLbl.Position = UDim2.new(0, 12, 0, 0)
@@ -1500,8 +1543,8 @@ function TabMT:CreateKeybind(text, defaultKey, callback, flag)
     KeyBtn.Text = currentKey.Name
     KeyBtn.Font = Enum.Font.Gotham
     KeyBtn.TextSize = 11
-    KeyBtn.TextColor3 = Theme.SubText
-    KeyBtn.BackgroundColor3 = Theme.Sidebar
+    bindColor(KeyBtn, "TextColor3", "SubText")
+    bindColor(KeyBtn, "BackgroundColor3", "Sidebar")
     KeyBtn.Size = UDim2.new(0, 80, 0, 26)
     KeyBtn.Position = UDim2.new(1, -92, 0.5, -13)
     Instance.new("UICorner", KeyBtn).CornerRadius = UDim.new(0, 5)
@@ -1554,17 +1597,17 @@ function TabMT:CreateColorPicker(text, defaultColor, callback, flag)
 
     local Card = Instance.new("Frame", self.Page)
     Card.Size = UDim2.new(1, 0, 0, 36)
-    Card.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    bindColor(Card, "BackgroundColor3", "Card")
     Card.BackgroundTransparency = 0.3
     Card.ClipsDescendants = true
     Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
-    local Stroke = Instance.new("UIStroke", Card) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Card) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local TitleLbl = Instance.new("TextLabel", Card)
     TitleLbl.Text = text
     TitleLbl.Font = Enum.Font.Gotham
     TitleLbl.TextSize = 12
-    TitleLbl.TextColor3 = Theme.Text
+    bindColor(TitleLbl, "TextColor3", "Text")
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Size = UDim2.new(1, -60, 0, 36)
     TitleLbl.Position = UDim2.new(0, 12, 0, 0)
@@ -1593,19 +1636,19 @@ function TabMT:CreateColorPicker(text, defaultColor, callback, flag)
         Lbl.Text = labelText
         Lbl.Font = Enum.Font.Gotham
         Lbl.TextSize = 11
-        Lbl.TextColor3 = Theme.SubText
+        bindColor(Lbl, "TextColor3", "SubText")
         Lbl.BackgroundTransparency = 1
         Lbl.Size = UDim2.new(0, 16, 1, 0)
 
         local Track = Instance.new("Frame", Row)
         Track.Size = UDim2.new(1, -26, 0, 6)
         Track.Position = UDim2.new(0, 20, 0.5, -3)
-        Track.BackgroundColor3 = Theme.Sidebar
+        bindColor(Track, "BackgroundColor3", "Sidebar")
         Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
 
         local Fill = Instance.new("Frame", Track)
         Fill.Size = UDim2.new(initValue / 255, 0, 1, 0)
-        Fill.BackgroundColor3 = Theme.Accent
+        bindColor(Fill, "BackgroundColor3", "Accent")
         Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
 
         local dragging = false
@@ -1698,17 +1741,17 @@ function TabMT:CreateCFrameCopier(text)
 
     local Card = Instance.new("Frame", self.Page)
     Card.Size = UDim2.new(1, 0, 0, 36)
-    Card.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    bindColor(Card, "BackgroundColor3", "Card")
     Card.BackgroundTransparency = 0.3
     Card.ClipsDescendants = true
     Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
-    local Stroke = Instance.new("UIStroke", Card) Stroke.Color = Theme.Stroke Stroke.Transparency = 0.4
+    local Stroke = Instance.new("UIStroke", Card) bindColor(Stroke, "Color", "Stroke") Stroke.Transparency = 0.4
 
     local TitleLbl = Instance.new("TextLabel", Card)
     TitleLbl.Text = text
     TitleLbl.Font = Enum.Font.Gotham
     TitleLbl.TextSize = 12
-    TitleLbl.TextColor3 = Theme.Text
+    bindColor(TitleLbl, "TextColor3", "Text")
     TitleLbl.BackgroundTransparency = 1
     TitleLbl.Size = UDim2.new(1, -92, 0, 36)
     TitleLbl.Position = UDim2.new(0, 12, 0, 0)
@@ -1718,8 +1761,8 @@ function TabMT:CreateCFrameCopier(text)
     CopyBtn.Text = "คัดลอก"
     CopyBtn.Font = Enum.Font.GothamBold
     CopyBtn.TextSize = 11
-    CopyBtn.TextColor3 = Theme.Text
-    CopyBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    bindColor(CopyBtn, "TextColor3", "Text")
+    bindColor(CopyBtn, "BackgroundColor3", "Stroke")
     CopyBtn.Size = UDim2.new(0, 72, 0, 26)
     CopyBtn.Position = UDim2.new(1, -84, 0, 5)
     Instance.new("UICorner", CopyBtn).CornerRadius = UDim.new(0, 5)
@@ -1728,11 +1771,11 @@ function TabMT:CreateCFrameCopier(text)
     OutputBox.Text = ""
     OutputBox.Font = Enum.Font.Code
     OutputBox.TextSize = 11
-    OutputBox.TextColor3 = Theme.SubText
+    bindColor(OutputBox, "TextColor3", "SubText")
     OutputBox.ClearTextOnFocus = false
     OutputBox.TextEditable = true
     OutputBox.MultiLine = false
-    OutputBox.BackgroundColor3 = Theme.Sidebar
+    bindColor(OutputBox, "BackgroundColor3", "Sidebar")
     OutputBox.Size = UDim2.new(1, -16, 0, 26)
     OutputBox.Position = UDim2.new(0, 8, 0, 40)
     OutputBox.Visible = false
