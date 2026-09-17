@@ -115,7 +115,9 @@ local function makeDraggable(topbar, frame)
     UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
-            tween(frame, {Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)}, 0.05)
+            -- ขยับทันทีแบบ 1:1 ไม่ tween กันปัญหา tween ซ้อนกันหลายตัวตอนลากเร็วๆ
+            -- ซึ่งอาจไปแย่งเขียนค่า Position กับ tween ของปุ่ม +/- ที่กดต่อทันที ทำให้ตำแหน่งเพี้ยน
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 end
@@ -668,25 +670,34 @@ function Library:CreateWindow(config)
 
     local isMinimized = false
     local originalSize = MainFrame.Size
-    local originalPosition = MainFrame.Position -- ตำแหน่งกลางจอตอนสร้าง ใช้ดึงหน้าต่างกลับมาตอนกด + (กัน โป่งออกนอกจอถ้าลากไปติดขอบไว้ก่อนย่อ)
+    local originalPosition = MainFrame.Position -- ตำแหน่งกลางจอตอนสร้าง ใช้ดึงหน้าต่างกลับมาตอนกด +
+
+    local activeWindowTween = nil
+
     local function setMinimized(state)
         isMinimized = state
+
+        -- ยกเลิก tween ตัวก่อนหน้าก่อนเสมอ กันกด +/- รัวๆ จนมี tween ซ้อนกันแย่งเขียนค่า Size/Position
+        if activeWindowTween then
+            activeWindowTween:Cancel()
+            activeWindowTween = nil
+        end
+
         if isMinimized then
             Sidebar.Visible = false
             ContentContainer.Visible = false
             TopDivider.Visible = false
             MinimizeBtn.Text = "+"
             -- ปลดล็อกเพดานความสูงขั้นต่ำชั่วคราว ไม่งั้น UISizeConstraint จะดันความสูงกลับไม่ให้ต่ำกว่า 380px
-            -- ทำให้ย่อได้แค่ความกว้าง (310 > 300 ผ่าน) แต่ย่อความสูงไม่ได้ (48 < 380 ติด constraint)
             MainSizeConstraint.MinSize = Vector2.new(0, 0)
-            -- ปุ่ม "-": คงตำแหน่งเดิมไว้ตามที่ลากไปวาง ไม่ขยับ (ตามที่ขอ)
-            tween(MainFrame, {Size = UDim2.new(0, 310, 0, 48)})
+            -- ปุ่ม "-": คงตำแหน่งเดิมไว้ตามที่ลากไปวาง ไม่ขยับเลย
+            activeWindowTween = tween(MainFrame, {Size = UDim2.new(0, 310, 0, 48)})
         else
             MinimizeBtn.Text = "-"
-            -- คืนเพดานขั้นต่ำกลับก่อนขยาย ป้องกันหน้าต่างเล็กเกินไปตอนใช้งานปกติ
             MainSizeConstraint.MinSize = Vector2.new(300, 380)
-            -- ปุ่ม "+": ดึงหน้าต่างกลับมากลางจอเสมอ พร้อมขยายขนาด กันโป่งออกนอกจอเวลาที่ก่อนหน้านี้ถูกลากไปติดขอบจอไว้
+            -- ปุ่ม "+": ดึงหน้าต่างกลับมากลางจอเสมอ (ตามที่ต้องการ) ไม่ว่าจะลากไปไว้ตรงไหนก็ตาม
             local anim = tween(MainFrame, {Size = originalSize, Position = originalPosition})
+            activeWindowTween = anim
             anim.Completed:Connect(function()
                 if not isMinimized then
                     Sidebar.Visible = true
