@@ -671,6 +671,15 @@ function Library:CreateWindow(config)
     local isMinimized = false
     local originalSize = MainFrame.Size
     local originalPosition = MainFrame.Position -- ตำแหน่งกลางจอตอนสร้าง ใช้ดึงหน้าต่างกลับมาตอนกด +
+    local lastMinimizedPosition = nil -- ตำแหน่งล่าสุดที่ลากไว้ "ตอนย่อ" เก็บแยกจากตำแหน่งกลางจอ ให้กด - กลับมาจุดนี้เสมอ
+
+    -- คอยจับตำแหน่งทุกครั้งที่ Position เปลี่ยน (จากการลาก) แต่บันทึกไว้เฉพาะตอนอยู่ในสถานะย่ออยู่แล้วเท่านั้น
+    -- (ตอนกด + แล้ว Position ค่อยๆ ขยับไปกลางจอผ่าน tween ก็จะไม่ถูกบันทึกทับ เพราะ isMinimized เป็น false อยู่ระหว่างนั้น)
+    MainFrame:GetPropertyChangedSignal("Position"):Connect(function()
+        if isMinimized then
+            lastMinimizedPosition = MainFrame.Position
+        end
+    end)
 
     local activeWindowTween = nil
 
@@ -690,8 +699,9 @@ function Library:CreateWindow(config)
             MinimizeBtn.Text = "+"
             -- ปลดล็อกเพดานความสูงขั้นต่ำชั่วคราว ไม่งั้น UISizeConstraint จะดันความสูงกลับไม่ให้ต่ำกว่า 380px
             MainSizeConstraint.MinSize = Vector2.new(0, 0)
-            -- ปุ่ม "-": คงตำแหน่งเดิมไว้ตามที่ลากไปวาง ไม่ขยับเลย
-            activeWindowTween = tween(MainFrame, {Size = UDim2.new(0, 310, 0, 48)})
+            -- ปุ่ม "-": กลับไปยังตำแหน่งที่เคยลากไว้ตอนย่อครั้งก่อน (ถ้ามี) ไม่งั้นก็อยู่ตำแหน่งปัจจุบัน (ครั้งแรกที่ย่อ)
+            local targetPos = lastMinimizedPosition or MainFrame.Position
+            activeWindowTween = tween(MainFrame, {Size = UDim2.new(0, 310, 0, 48), Position = targetPos})
         else
             MinimizeBtn.Text = "-"
             MainSizeConstraint.MinSize = Vector2.new(300, 380)
