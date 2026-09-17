@@ -325,22 +325,24 @@ function Library:CreateWindow(config)
     TooltipLabel.ZIndex = 100
     TooltipLabel.Parent = TooltipFrame
 
-    local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+    -- ขนาดหน้าต่างแบบ Responsive: ใช้ Scale (%) ของจอเป็นหลัก แล้ว "เพดานบน-ล่าง" ด้วย UISizeConstraint
+    -- เพื่อไม่ให้เล็กเกินจนใช้งานไม่ได้ (มือถือ) และไม่ให้ใหญ่เกินไปจนดูแปลกบนจอใหญ่ (เดสก์ท็อป/มอนิเตอร์)
+    -- วิธีนี้ทำงานถูกต้องในทุกกรณีโดยไม่ต้องเดาว่าเป็นอุปกรณ์ประเภทไหน (มือถือ, แท็บเล็ต, PC resize หน้าต่างเล็ก, ฯลฯ)
     local MainFrame = Instance.new("CanvasGroup")
     MainFrame.Name = "MainFrame"
-    if isMobile then
-        MainFrame.Size = UDim2.new(0.9, 0, 0, 360)
-        MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-        MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    else
-        MainFrame.Size = UDim2.new(0, 680, 0, 460)
-        MainFrame.Position = UDim2.new(0.5, -340, 0.5, -230)
-    end
+    MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    MainFrame.Size = UDim2.new(0.92, 0, 0.85, 0)
+    MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     bindColor(MainFrame, "BackgroundColor3", "Background")
     MainFrame.BackgroundTransparency = 0.15
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
+
+    local MainSizeConstraint = Instance.new("UISizeConstraint")
+    MainSizeConstraint.MinSize = Vector2.new(300, 380) -- เล็กสุดที่ยังกดใช้งานได้สะดวกบนมือถือจอเล็ก
+    MainSizeConstraint.MaxSize = Vector2.new(680, 460) -- ใหญ่สุดเท่าดีไซน์เดิม กันขยายเกินบนมอนิเตอร์ใหญ่
+    MainSizeConstraint.Parent = MainFrame
 
     local UICorner = Instance.new("UICorner")
     UICorner.CornerRadius = UDim.new(0, 10)
@@ -363,7 +365,7 @@ function Library:CreateWindow(config)
 
     local BrandFrame = Instance.new("Frame")
     BrandFrame.Name = "BrandFrame"
-    BrandFrame.Size = UDim2.new(0, 240, 1, 0)
+    BrandFrame.Size = UDim2.new(1, -92, 1, 0) -- กว้างเท่าที่เหลือจริงหลังหักพื้นที่ปุ่มปิด/ย่อ (60px + ระยะขอบ) กันชนกันตอนหน้าต่างแคบ
     BrandFrame.Position = UDim2.new(0, 16, 0, 0)
     BrandFrame.BackgroundTransparency = 1
     BrandFrame.ZIndex = 11
@@ -394,6 +396,7 @@ function Library:CreateWindow(config)
     TitleLabel.TextSize = 13
     bindColor(TitleLabel, "TextColor3", "Text")
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
     TitleLabel.BackgroundTransparency = 1
     TitleLabel.ZIndex = 12
     TitleLabel.Parent = BrandFrame
@@ -407,6 +410,7 @@ function Library:CreateWindow(config)
     SubtitleLabel.TextSize = 10
     bindColor(SubtitleLabel, "TextColor3", "SubText")
     SubtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SubtitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
     SubtitleLabel.BackgroundTransparency = 1
     SubtitleLabel.ZIndex = 12
     SubtitleLabel.Parent = BrandFrame
@@ -465,7 +469,7 @@ function Library:CreateWindow(config)
     -- ================= LEFT SIDEBAR =================
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
-    Sidebar.Size = UDim2.new(0, 210, 1, -49)
+    Sidebar.Size = UDim2.new(0.3, 0, 1, -49) -- ใช้ % ของความกว้าง MainFrame แทนพิกเซลตายตัว กันทับ Content ตอนหน้าต่างแคบ
     Sidebar.Position = UDim2.new(0, 0, 0, 49)
     bindColor(Sidebar, "BackgroundColor3", "Sidebar")
     Sidebar.BackgroundTransparency = 0.25
@@ -583,8 +587,8 @@ function Library:CreateWindow(config)
     -- ================= RIGHT CONTENT AREA =================
     local ContentContainer = Instance.new("Frame")
     ContentContainer.Name = "ContentContainer"
-    ContentContainer.Size = UDim2.new(1, -226, 1, -59)
-    ContentContainer.Position = UDim2.new(0, 218, 0, 54)
+    ContentContainer.Size = UDim2.new(0.7, -16, 1, -59) -- ให้สัมพันธ์กับ Sidebar 30% ที่เหลืออีก 70% หัก padding เล็กน้อย
+    ContentContainer.Position = UDim2.new(0.3, 8, 0, 54)
     ContentContainer.BackgroundTransparency = 1
     ContentContainer.Parent = MainFrame
 
