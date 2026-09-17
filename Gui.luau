@@ -668,6 +668,7 @@ function Library:CreateWindow(config)
 
     local isMinimized = false
     local originalSize = MainFrame.Size
+    local originalPosition = MainFrame.Position -- ตำแหน่งกลางจอตอนสร้าง ใช้ดึงหน้าต่างกลับมาตอนกด + (กัน โป่งออกนอกจอถ้าลากไปติดขอบไว้ก่อนย่อ)
     local function setMinimized(state)
         isMinimized = state
         if isMinimized then
@@ -678,12 +679,14 @@ function Library:CreateWindow(config)
             -- ปลดล็อกเพดานความสูงขั้นต่ำชั่วคราว ไม่งั้น UISizeConstraint จะดันความสูงกลับไม่ให้ต่ำกว่า 380px
             -- ทำให้ย่อได้แค่ความกว้าง (310 > 300 ผ่าน) แต่ย่อความสูงไม่ได้ (48 < 380 ติด constraint)
             MainSizeConstraint.MinSize = Vector2.new(0, 0)
+            -- ปุ่ม "-": คงตำแหน่งเดิมไว้ตามที่ลากไปวาง ไม่ขยับ (ตามที่ขอ)
             tween(MainFrame, {Size = UDim2.new(0, 310, 0, 48)})
         else
             MinimizeBtn.Text = "-"
             -- คืนเพดานขั้นต่ำกลับก่อนขยาย ป้องกันหน้าต่างเล็กเกินไปตอนใช้งานปกติ
             MainSizeConstraint.MinSize = Vector2.new(300, 380)
-            local anim = tween(MainFrame, {Size = originalSize})
+            -- ปุ่ม "+": ดึงหน้าต่างกลับมากลางจอเสมอ พร้อมขยายขนาด กันโป่งออกนอกจอเวลาที่ก่อนหน้านี้ถูกลากไปติดขอบจอไว้
+            local anim = tween(MainFrame, {Size = originalSize, Position = originalPosition})
             anim.Completed:Connect(function()
                 if not isMinimized then
                     Sidebar.Visible = true
