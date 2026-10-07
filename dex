@@ -1497,7 +1497,7 @@ function Library:CreateWindow(config)
 
 	local titleText = config.Title or config[1] or "Vortex UI"
 	local subtitleText = config.Subtitle or ("Universal | v" .. self.Version)
-	local iconId = config.Icon or "rbxassetid://75491720746957"
+	local iconId = config.Icon or ""
 	local closeAction = config.CloseAction or "Confirm"
 	self.Folder = config.Folder or self.Folder
 	self.ConfigName = config.ConfigName or (tostring(titleText):gsub("[^%w%-_ ]", "_"))
