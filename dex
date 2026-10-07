@@ -1,5 +1,5 @@
 --[[
-    VORTEX UI  v2.1  (Glass style + Library features + Key system + Loading)
+    VORTEX UI  v2.2  NO-KEY  (Glass style + Library features + Loading)
     ------------------------------------------------------------------
     local Library = loadstring(readfile("VortexUI.lua"))()   -- หรือ loadstring(game:HttpGet(URL))()
 
@@ -31,31 +31,19 @@
     Library:SetTheme("ocean") / Library:SetAccent(Color3) / Library.Flags.myFlag
     Library:SaveConfig() / :LoadConfig() / :ResetConfig() / :Unload()
 
-    ธีมที่มี: blue, violet, emerald, sunset, amber, midnight, graphite, ocean, rose, forest, honey, iris
+    ธีมที่มี: red (ค่าเริ่มต้น), blue, violet, emerald, sunset, amber, midnight, graphite, ocean, rose, forest, honey, iris
     (ใช้ key หรือชื่อที่แสดงก็ได้ ไม่สนตัวพิมพ์เล็กใหญ่)
 
-    ---------------- KEY SYSTEM + LOADING ----------------
-    -- คำสั่งเดียวจบ: Key -> Loading -> Window  (คืน nil ถ้าผู้ใช้กดปิดหน้า Key)
+    ---------------- LOADING ----------------
+    -- คำสั่งเดียว: หน้า Loading -> Window
     local Window = Library:Start({
-        KeySystem = {
-            Title = "My Hub", GetKeyLink = "https://example.com/getkey",
-            Url = "https://api.yoursite.com/check",   -- หรือใช้ Validate = function(key, info) ... end
-            -- Method = "POST" | "GET", Headers = {...}, MaxAttempts = 5, Cooldown = 30, SaveKey = true,
-            -- OnSuccess = function(key, data) end, OnClose = function() end,
-        },
-        Loading = { Steps = { "Checking...", "Loading modules", "Done" }, Duration = 3 },  -- Loading = false เพื่อข้าม
-        Window = { Title = "My Hub", Theme = "midnight" },
+        Loading = { Steps = { "Initializing", "Loading modules", "Almost there" }, Duration = 3 },  -- Loading = false เพื่อข้าม
+        Window  = { Title = "My Hub", Theme = "red" },
     })
-    if not Window then return end
 
-    -- แยกเรียกเองก็ได้:
-    local ok, key, data = Library:KeySystem({...})      -- yield จนกว่าจะผ่าน (ok=false = ผู้ใช้ปิด)
+    -- หรือเรียกเอง:
     local L = Library:ShowLoading({ Manual = true })    -- L:Set(0.5, "ข้อความ") ... L:Finish()
-
-    -- Backend contract (โหมด Url):
-    --   POST JSON  { key, hwid, userId, username, placeId, jobId, time }   (GET = query string)
-    --   ตอบกลับ     { "valid": true|false, "message": "ข้อความ", "data": {...} }  หรือข้อความ "true"/"valid"/"ok"
-    --   โหมด Validate: return true/false, "ข้อความ", data  (จะ HttpGet เองก็ได้)
+    local Window = Library:CreateWindow({ Title = "My Hub" })    -- ข้ามหน้า Loading ทั้งหมด
 --]]
 
 local TweenService = game:GetService("TweenService")
@@ -67,9 +55,9 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "2.1.0",
+	Version = "2.2.0",
 	Flags = {}, Elements = {}, Windows = {},
-	Themes = {}, ThemeOrder = {}, Theme = {}, ThemeName = "blue",
+	Themes = {}, ThemeOrder = {}, Theme = {}, ThemeName = "red",
 	Folder = "VortexUI", ConfigName = "main",
 	AutoSave = true, FireOnInit = true,
 	_config = {}, _conns = {}, _guis = {}, _paints = {}, _keybinds = {},
@@ -94,8 +82,18 @@ local function safe(fn, ...)
 	if not ok then warn("[VortexUI] callback error: " .. tostring(err)) end
 end
 
+-- จำ tween ที่แตะ property สีไว้ เพื่อให้ตอนเปลี่ยนธีมสั่งยกเลิกได้ (กัน tween เขียนสีธีมเก่าทับ)
+local colorTweens = setmetatable({}, { __mode = "k" })
 local function tween(obj, props, dur, style, dir)
 	local tw = TweenService:Create(obj, TweenInfo.new(dur or 0.2, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+	for k in pairs(props) do
+		if k:find("Color") then
+			local t = colorTweens[obj]
+			if not t then t = {}; colorTweens[obj] = t end
+			if t[k] then pcall(function() t[k]:Cancel() end) end
+			t[k] = tw
+		end
+	end
 	tw:Play()
 	return tw
 end
@@ -210,6 +208,12 @@ local function lib(bg, side, card, stroke_, text, sub, accent)
 	return { Background = bg, Sidebar = side, Card = card, Stroke = stroke_, Text = text, SubText = sub, Accent = accent }
 end
 
+-- ธีมสีแดง (สีประจำทีม) เป็นค่าเริ่มต้น
+addTheme("red", "Team Red", {
+	Background = rgb(17, 10, 11), Sidebar = rgb(13, 8, 9), Card = rgb(27, 16, 18), CardHover = rgb(40, 23, 26),
+	Accent = rgb(232, 58, 66), Accent2 = rgb(255, 112, 88), Text = rgb(246, 236, 236), SubText = rgb(163, 134, 137),
+	Stroke = rgb(62, 36, 40), Error = rgb(232, 58, 66),
+})
 -- ธีมจากไฟล์ txt เดิม
 addTheme("blue", "Default Blue", {
 	Background = rgb(18, 18, 18), Sidebar = rgb(14, 14, 14), Card = rgb(24, 24, 24), CardHover = rgb(32, 32, 40),
@@ -268,29 +272,59 @@ function Library:_loadPreset(key)
 	self.ThemeName = key
 end
 
--- รีเฟรชสีทั้ง UI ตาม Attribute "Bind_<Property>" + มี Overlay จางๆ ให้นุ่มนวล
-local function repaintTheme(gui)
+-- รีเฟรชสีทั้ง UI ตาม Attribute "Bind_<Property>"
+local function applyTheme(gui)
 	if not gui or not gui.Parent then return end
-	local overlay = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, ZIndex = 200, Parent = gui })
-	tween(overlay, { BackgroundTransparency = 0.6 }, 0.09)
-	task.delay(0.1, function()
-		for _, inst in ipairs(gui:GetDescendants()) do
-			for attr, key in pairs(inst:GetAttributes()) do
-				local prop = attr:match("^Bind_(.+)$")
-				if prop and Theme[key] ~= nil then pcall(function() inst[prop] = Theme[key] end) end
-			end
+	-- ยกเลิก tween สีที่ค้างอยู่ก่อน ไม่งั้นมันจะวิ่งไปจบที่สีธีมเก่าแล้วทับสีใหม่
+	for obj, props in pairs(colorTweens) do
+		for _, tw in pairs(props) do pcall(function() tw:Cancel() end) end
+		colorTweens[obj] = nil
+	end
+	for _, inst in ipairs(gui:GetDescendants()) do
+		for attr, key in pairs(inst:GetAttributes()) do
+			local prop = attr:match("^Bind_(.+)$")
+			if prop and Theme[key] ~= nil then pcall(function() inst[prop] = Theme[key] end) end
 		end
-		for i = #Library._paints, 1, -1 do
-			local e = Library._paints[i]
-			if not e.inst.Parent then table.remove(Library._paints, i) else pcall(e.fn) end
-		end
-		tween(overlay, { BackgroundTransparency = 1 }, 0.2)
-		task.delay(0.22, function() overlay:Destroy() end)
-	end)
+	end
+	for i = #Library._paints, 1, -1 do
+		local e = Library._paints[i]
+		if not e.inst.Parent then table.remove(Library._paints, i) else pcall(e.fn) end
+	end
 end
 
-function Library:_repaint()
-	for _, g in ipairs(self._guis) do repaintTheme(g) end
+-- smooth=true : มี overlay วูบนุ่มๆ (ใช้ตอนเปลี่ยนธีม)
+-- smooth=false: เปลี่ยนทันที (ใช้ตอนลากสี accent ไม่ให้กระตุก)
+function Library:_repaint(smooth)
+	if self._repaintBusy then self._repaintAgain = true return end
+	self._repaintBusy = true
+	local overlays = {}
+	if smooth then
+		for _, g in ipairs(self._guis) do
+			local o = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 200, Parent = g })
+			tween(o, { BackgroundTransparency = 0.6 }, 0.09)
+			table.insert(overlays, o)
+		end
+	end
+	task.delay(smooth and 0.1 or 0, function()
+		for _, g in ipairs(self._guis) do applyTheme(g) end
+		for _, o in ipairs(overlays) do
+			tween(o, { BackgroundTransparency = 1 }, 0.2)
+			task.delay(0.22, function() o:Destroy() end)
+		end
+		self._repaintBusy = false
+		if self._repaintAgain then
+			self._repaintAgain = false
+			self:_repaint(false)
+		end
+		-- รอบสองกันของที่ยังค้างจาก tween
+		if not self._pass2 then
+			self._pass2 = true
+			task.delay(0.4, function()
+				self._pass2 = false
+				for _, g in ipairs(self._guis) do applyTheme(g) end
+			end)
+		end
+	end)
 end
 
 function Library:SetTheme(t, silent)
@@ -304,7 +338,7 @@ function Library:SetTheme(t, silent)
 		self._config["ui.theme"] = key
 		if not silent then self:Notify("ธีม", "เปลี่ยนเป็น " .. (self.Themes[key].DisplayName or key), 2) end
 	end
-	self:_repaint()
+	self:_repaint(true)
 	self:_queueSave()
 	return true
 end
@@ -313,7 +347,7 @@ function Library:SetAccent(color)
 	self._accent = color
 	self:_loadPreset(self.ThemeName)
 	self._config["ui.accent"] = color and toHex(color) or nil
-	self:_repaint()
+	self:_repaint(false)
 	self:_queueSave()
 end
 
@@ -691,11 +725,11 @@ function TabMT:CreateSlider(text, min, max, default, callback, flag, increment)
 	local value = snap(initial(flag, def))
 
 	local frame = new("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, LayoutOrder = nextOrder(self), Parent = self.Page })
-	label(frame, { Text = tostring(text or "Slider"), Size = UDim2.new(0.4, 0, 1, 0) }, "Text")
+	label(frame, { Text = tostring(text or "Slider"), Size = UDim2.new(0.38, 0, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd }, "Text")
 	local vbox = new("Frame", { Size = UDim2.fromOffset(46, 22), Position = UDim2.new(1, -46, 0.5, -11), BackgroundTransparency = 0.3, Parent = frame }, { BackgroundColor3 = "Card" })
 	corner(vbox, 4)
 	local vlabel = label(vbox, { Size = UDim2.fromScale(1, 1), TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center }, "Text")
-	local track = new("Frame", { Size = UDim2.new(0.6, -100, 0, 4), Position = UDim2.new(0.4, 10, 0.5, -2), BackgroundTransparency = 0.2, Parent = frame }, { BackgroundColor3 = "Input" })
+	local track = new("Frame", { Size = UDim2.new(0.62, -64, 0, 4), Position = UDim2.new(0.38, 8, 0.5, -2), BackgroundTransparency = 0.2, Parent = frame }, { BackgroundColor3 = "Input" })
 	corner(track, 2)
 	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0, Parent = track }, { BackgroundColor3 = "Accent" })
 	corner(fill, 2)
@@ -1127,6 +1161,7 @@ function WindowMT:Destroy()
 end
 
 function WindowMT:SelectTab(tab)
+	if self.ActiveTab == tab then return end
 	for _, t in ipairs(self.Tabs) do
 		t.MainPage.Visible = false
 		tween(t.Button, { BackgroundTransparency = 1 }, 0.15)
@@ -1274,7 +1309,7 @@ function Library:_prepare(cfg, readCfg)
 		if type(self._config["ui.accent"]) == "string" then self._accent = fromHex(self._config["ui.accent"]) end
 	end
 	local saved = readCfg and resolveTheme(self._config["ui.theme"]) or nil
-	self:_loadPreset(saved or resolveTheme(cfg.Theme) or resolveTheme(self.ThemeName) or "blue")
+	self:_loadPreset(saved or resolveTheme(cfg.Theme) or resolveTheme(self.ThemeName) or "red")
 end
 
 local function newGui(name)
@@ -1324,36 +1359,86 @@ function Library:ShowLoading(cfg)
 	cfg = cfg or {}
 	self:_prepare(cfg, false)
 	local gui = newGui("VortexLoader")
-	local dim = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, Parent = gui })
-	tween(dim, { BackgroundTransparency = cfg.Dim or 0.4 }, 0.3)
-	local card, scale = glassCard(gui, 320, 196)
+	local dim = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(4, 3, 3), BackgroundTransparency = 1, BorderSizePixel = 0, Parent = gui })
+	tween(dim, { BackgroundTransparency = cfg.Dim or 0.25 }, 0.4)
+	local card, scale, flash = glassCard(gui, 340, 226)
 
-	-- วงแหวนหมุน + โลโก้เต้นเป็นจังหวะ
-	local ring = new("Frame", { Size = UDim2.fromOffset(64, 64), Position = UDim2.new(0.5, -32, 0, 22), BackgroundTransparency = 1, Parent = card })
-	corner(ring, 32)
-	local rs = new("UIStroke", { Thickness = 3, Color = Color3.new(1, 1, 1), Parent = ring })
-	local rg = new("UIGradient", {
-		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.65, 0.35), NumberSequenceKeypoint.new(1, 1) }),
-		Parent = rs,
-	})
-	onTheme(ring, function() rg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
-	TweenService:Create(ring, TweenInfo.new(1.1, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), { Rotation = 360 }):Play()
+	local function loop(inst, props, t, style, dir, reverse)
+		TweenService:Create(inst, TweenInfo.new(t, style or Enum.EasingStyle.Linear, dir or Enum.EasingDirection.Out, -1, reverse or false), props):Play()
+	end
+
+	-- เส้นไฟด้านบนการ์ด
+	local topBar = new("Frame", { Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Parent = card })
+	local tg = new("UIGradient", { Parent = topBar })
+	onTheme(topBar, function() tg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
+
+	local CY = 62
+	local center = Vector2.new(0.5, 0.5)
+	-- แสงเรืองด้านหลังโลโก้ (หายใจเข้าออก)
+	local glow = new("Frame", { AnchorPoint = center, Position = UDim2.new(0.5, 0, 0, CY), Size = UDim2.fromOffset(84, 84), BackgroundTransparency = 0.85, BorderSizePixel = 0, Parent = card }, { BackgroundColor3 = "Accent" })
+	corner(glow, 60)
+	loop(glow, { Size = UDim2.fromOffset(108, 108), BackgroundTransparency = 0.96 }, 1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, true)
+
+	-- วงแหวนสองชั้นหมุนสวนทางกัน
+	local function makeRing(size, thick, rot, secs, flip)
+		local r = new("Frame", { AnchorPoint = center, Position = UDim2.new(0.5, 0, 0, CY), Size = UDim2.fromOffset(size, size), BackgroundTransparency = 1, Parent = card })
+		corner(r, size)
+		local s = new("UIStroke", { Thickness = thick, Color = Color3.new(1, 1, 1), Parent = r })
+		local g = new("UIGradient", {
+			Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.65, 0.35), NumberSequenceKeypoint.new(1, 1) }),
+			Parent = s,
+		})
+		onTheme(r, function() g.Color = flip and ColorSequence.new(Theme.Accent2, Theme.Accent) or ColorSequence.new(Theme.Accent, Theme.Accent2) end)
+		loop(r, { Rotation = rot }, secs)
+	end
+	makeRing(70, 3, 360, 1.1, false)
+	makeRing(56, 2, -360, 1.8, true)
+
+	-- จุดโคจร 3 จุด
+	local orbit = new("Frame", { AnchorPoint = center, Position = UDim2.new(0.5, 0, 0, CY), Size = UDim2.fromOffset(98, 98), BackgroundTransparency = 1, Parent = card })
+	for i = 0, 2 do
+		local a = i * math.pi * 2 / 3
+		local d = new("Frame", {
+			Size = UDim2.fromOffset(6, 6), Position = UDim2.new(0.5, -3 + 49 * math.cos(a), 0.5, -3 + 49 * math.sin(a)),
+			BackgroundTransparency = i * 0.25, BorderSizePixel = 0, Parent = orbit,
+		}, { BackgroundColor3 = "Accent2" })
+		corner(d, 3)
+	end
+	loop(orbit, { Rotation = 360 }, 2.6)
+
 	local logo = new("ImageLabel", {
-		Image = cfg.Icon or "rbxassetid://75491720746957", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0, 54), Size = UDim2.fromOffset(34, 34), ScaleType = Enum.ScaleType.Fit, Parent = card,
+		Image = cfg.Icon or "rbxassetid://75491720746957", BackgroundTransparency = 1, AnchorPoint = center,
+		Position = UDim2.new(0.5, 0, 0, CY), Size = UDim2.fromOffset(32, 32), ScaleType = Enum.ScaleType.Fit, Parent = card,
 	})
 	corner(logo, 6)
-	TweenService:Create(logo, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Size = UDim2.fromOffset(40, 40) }):Play()
+	loop(logo, { Size = UDim2.fromOffset(38, 38) }, 0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, true)
 
-	label(card, { Text = cfg.Title or "Loading", Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 98), Size = UDim2.new(1, 0, 0, 20) }, "Text")
-	local stepLbl = label(card, { Text = cfg.Subtitle or "", TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 120), Size = UDim2.new(1, 0, 0, 16) }, "SubText")
-	local track = new("Frame", { Size = UDim2.new(1, -48, 0, 6), Position = UDim2.fromOffset(24, 152), BackgroundTransparency = 0.2, Parent = card }, { BackgroundColor3 = "Input" })
+	-- ชื่อพิมพ์ทีละตัว
+	local fullTitle = tostring(cfg.Title or "Loading")
+	local titleLbl = label(card, { Text = "", Font = Enum.Font.GothamBold, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 112), Size = UDim2.new(1, 0, 0, 22) }, "Text")
+	task.spawn(function()
+		local n = utf8.len(fullTitle)
+		if not n then titleLbl.Text = fullTitle return end
+		for i = 1, n do
+			if not titleLbl.Parent then return end
+			titleLbl.Text = fullTitle:sub(1, utf8.offset(fullTitle, i + 1) - 1)
+			task.wait(0.045)
+		end
+	end)
+	local stepLbl = label(card, { Text = cfg.Subtitle or "", TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 138), Size = UDim2.new(1, 0, 0, 16) }, "SubText")
+
+	-- แถบโปรเกรส + แสงวิ่งผ่าน
+	local track = new("Frame", { Size = UDim2.new(1, -56, 0, 6), Position = UDim2.fromOffset(28, 170), BackgroundTransparency = 0.2, Parent = card }, { BackgroundColor3 = "Input" })
 	corner(track, 3)
-	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0, BackgroundColor3 = Color3.new(1, 1, 1), Parent = track })
+	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0, BackgroundColor3 = Color3.new(1, 1, 1), ClipsDescendants = true, Parent = track })
 	corner(fill, 3)
 	local fg = new("UIGradient", { Parent = fill })
 	onTheme(fill, function() fg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
-	local pct = label(card, { Text = "0%", TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 164), Size = UDim2.new(1, 0, 0, 14) }, "SubText")
+	local shine = new("Frame", { Size = UDim2.new(0, 34, 1, 0), Position = UDim2.new(-0.4, 0, 0, 0), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Parent = fill })
+	new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.35), NumberSequenceKeypoint.new(1, 1) }), Parent = shine })
+	loop(shine, { Position = UDim2.new(1.2, 0, 0, 0) }, 1, Enum.EasingStyle.Quad)
+	local pct = label(card, { Text = "0%", Font = Enum.Font.GothamMedium, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 182), Size = UDim2.new(1, 0, 0, 14) }, "Text")
+	label(card, { Text = cfg.Footer or ("Vortex UI  v" .. Library.Version), TextSize = 9, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 204), Size = UDim2.new(1, 0, 0, 14) }, "SubText")
 
 	local ctrl, done = {}, false
 	local function setStep(text)
@@ -1376,7 +1461,8 @@ function Library:ShowLoading(cfg)
 		if done then return end
 		ctrl:Set(1, text or cfg.DoneText or "Ready")
 		done = true
-		task.wait(0.45)
+		flash(Theme.Success)
+		task.wait(0.55)
 		tween(card, { GroupTransparency = 1 }, 0.3)
 		tween(scale, { Scale = 1.08 }, 0.3)
 		tween(dim, { BackgroundTransparency = 1 }, 0.3)
@@ -1387,7 +1473,7 @@ function Library:ShowLoading(cfg)
 
 	if cfg.Manual then return ctrl end
 	local steps = cfg.Steps or { "Initializing", "Loading modules", "Applying theme", "Almost there" }
-	local total = tonumber(cfg.Duration) or 3.2
+	local total = tonumber(cfg.Duration) or 3.4
 	local function run()
 		for i, s in ipairs(steps) do
 			if not gui.Parent then return end
@@ -1401,280 +1487,8 @@ function Library:ShowLoading(cfg)
 end
 
 ----------------------------------------------------------------------
--- Key system (ต่อ backend ได้ 2 แบบ)
---   1) Validate = function(key, info) return true/false, "ข้อความ", data end
---   2) Url = "https://api.yoursite.com/check"  (+ Method, Headers)
---
---   Request (POST, JSON):  { key, hwid, userId, username, placeId, jobId, time }
---   Request (GET): ?key=..&hwid=..&userId=..&username=..&placeId=..
---   Response (JSON):       { "valid": true|false, "message": "ข้อความ", "data": {...} }
---                          หรือข้อความล้วน "true" / "valid" / "ok"
-----------------------------------------------------------------------
-local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
-
-local function getHwid()
-	local ok, id = pcall(function() return game:GetService("RbxAnalyticsService"):GetClientId() end)
-	return ok and id or "unknown"
-end
-
-local function buildInfo(key)
-	return { key = key, hwid = getHwid(), userId = LocalPlayer.UserId, username = LocalPlayer.Name, placeId = game.PlaceId, jobId = game.JobId, time = os.time() }
-end
-
-local function httpCheck(cfg, info)
-	local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
-		or (syn and type(syn.request) == "function" and syn.request) or nil
-	if not req then return false, "Executor ไม่รองรับ HTTP request" end
-	local method = tostring(cfg.Method or "POST"):upper()
-	local url = tostring(cfg.Url)
-	local headers = { ["Content-Type"] = "application/json" }
-	for k, v in pairs(cfg.Headers or {}) do headers[k] = v end
-	local body
-	if method == "GET" then
-		local q = {}
-		for _, k in ipairs({ "key", "hwid", "userId", "username", "placeId" }) do
-			table.insert(q, k .. "=" .. HttpService:UrlEncode(tostring(info[k])))
-		end
-		url = url .. (url:find("?", 1, true) and "&" or "?") .. table.concat(q, "&")
-	else
-		body = HttpService:JSONEncode(info)
-	end
-	local ok, res = pcall(req, { Url = url, Method = method, Headers = headers, Body = body })
-	if not ok or type(res) ~= "table" then return false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้" end
-	local code = tonumber(res.StatusCode) or 0
-	local text = tostring(res.Body or "")
-	local okJ, data = pcall(function() return HttpService:JSONDecode(text) end)
-	if okJ and type(data) == "table" then
-		return data.valid == true or data.success == true, data.message, data.data or data
-	end
-	local t = (text:lower():gsub("%s+", ""))
-	if code >= 200 and code < 300 and (t == "true" or t == "valid" or t == "ok" or t == "1") then return true end
-	if code >= 500 then return false, "เซิร์ฟเวอร์ผิดพลาด (" .. code .. ")" end
-	return false, "คีย์ไม่ถูกต้อง"
-end
-
-local function runCheck(cfg, key)
-	local info = buildInfo(key)
-	local ok, a, b, c = pcall(function()
-		if cfg.Validate then return cfg.Validate(key, info) end
-		if cfg.Url then return httpCheck(cfg, info) end
-		return false, "ยังไม่ได้ตั้งค่า Validate หรือ Url"
-	end)
-	if not ok then return false, "เกิดข้อผิดพลาด: " .. tostring(a) end
-	if type(a) == "table" then return (a.valid == true or a.success == true), a.message, a.data or a end
-	return a == true, b, c
-end
-
-local function keyPath()
-	if hasFolders() then
-		pcall(function() if not isfolder(Library.Folder) then makefolder(Library.Folder) end end)
-		return Library.Folder .. "/key.txt"
-	end
-	return Library.Folder .. "_key.txt"
-end
-
--- return: ok, key, data  (ok=false ถ้าผู้ใช้กดปิดหน้าต่าง)
-function Library:KeySystem(cfg)
-	cfg = cfg or {}
-	self:_prepare(cfg, false)
-	if cfg.Folder then self.Folder = cfg.Folder end
-	local maxAttempts = tonumber(cfg.MaxAttempts) or 5
-	local cooldown = tonumber(cfg.Cooldown) or 30
-	local saveKey = cfg.SaveKey ~= false
-
-	local gui = newGui("VortexKeyUI")
-	local dim = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, Parent = gui })
-	tween(dim, { BackgroundTransparency = 0.45 }, 0.3)
-	local card, scale, flash = glassCard(gui, 360, 244)
-
-	-- header (ลากได้)
-	local header = new("Frame", { Size = UDim2.new(1, 0, 0, 58), BackgroundTransparency = 1, Parent = card })
-	local icon = new("ImageLabel", { Image = cfg.Icon or "rbxassetid://75491720746957", BackgroundTransparency = 1, Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(18, 13), ScaleType = Enum.ScaleType.Fit, Parent = header })
-	corner(icon, 6)
-	label(header, { Text = cfg.Title or "Key System", Font = Enum.Font.GothamBold, TextSize = 14, Position = UDim2.fromOffset(60, 12), Size = UDim2.new(1, -110, 0, 18) }, "Text")
-	label(header, { Text = cfg.Subtitle or "กรอกคีย์เพื่อใช้งาน", TextSize = 10, Position = UDim2.fromOffset(60, 30), Size = UDim2.new(1, -110, 0, 14) }, "SubText")
-	local closeBtn = new("TextButton", {
-		Text = "×", Font = Enum.Font.GothamBold, TextSize = 16, Size = UDim2.fromOffset(26, 26), Position = UDim2.new(1, -40, 0, 16),
-		BackgroundTransparency = 0.3, AutoButtonColor = false, Parent = header,
-	}, { BackgroundColor3 = "Card", TextColor3 = "SubText" })
-	corner(closeBtn, 6)
-	closeBtn.MouseEnter:Connect(function() tween(closeBtn, { BackgroundColor3 = Theme.Error, BackgroundTransparency = 0.1 }, 0.12) end)
-	closeBtn.MouseLeave:Connect(function() tween(closeBtn, { BackgroundColor3 = Theme.Card, BackgroundTransparency = 0.3 }, 0.12) end)
-	local line = new("Frame", { Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 58), BorderSizePixel = 0, BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.4, Parent = card })
-	local lg = new("UIGradient", { Parent = line })
-	onTheme(line, function() lg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
-
-	header.InputBegan:Connect(function(input)
-		if not isPress(input) then return end
-		local m0, p0 = input.Position, card.Position
-		startDrag(function(i)
-			local d = i.Position - m0
-			card.Position = UDim2.new(p0.X.Scale, p0.X.Offset + d.X, p0.Y.Scale, p0.Y.Offset + d.Y)
-		end)
-	end)
-
-	label(card, {
-		Text = cfg.Note or "รับคีย์ได้จากปุ่ม Get Key แล้วนำมาวางในช่องด้านล่าง", TextSize = 11, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top,
-		Position = UDim2.fromOffset(18, 68), Size = UDim2.new(1, -36, 0, 30),
-	}, "SubText")
-
-	local inputBox = new("Frame", { Size = UDim2.new(1, -36, 0, 38), Position = UDim2.fromOffset(18, 104), BackgroundTransparency = 0.1, Parent = card }, { BackgroundColor3 = "Input" })
-	corner(inputBox, 8)
-	local inStroke = stroke(inputBox, "Stroke", 0.3)
-	local input = new("TextBox", {
-		Text = "", PlaceholderText = cfg.Placeholder or "Enter your key...", Font = Enum.Font.Gotham, TextSize = 12, ClearTextOnFocus = false,
-		TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Size = UDim2.new(1, -24, 1, 0), Position = UDim2.fromOffset(12, 0), Parent = inputBox,
-	}, { TextColor3 = "Text", PlaceholderColor3 = "SubText" })
-	input.Focused:Connect(function() tween(inStroke, { Color = Theme.Accent, Transparency = 0 }, 0.15) end)
-	input.FocusLost:Connect(function() tween(inStroke, { Color = Theme.Stroke, Transparency = 0.3 }, 0.15) end)
-
-	local statusLbl = label(card, { Text = "", TextSize = 11, Position = UDim2.fromOffset(18, 150), Size = UDim2.new(1, -36, 0, 16) }, "SubText")
-	local function setStatus(text, kind, instant)
-		local key = kind == "error" and "Error" or kind == "success" and "Success" or "SubText"
-		statusLbl.Text = text or ""
-		setBind(statusLbl, "TextColor3", key, not instant)
-		if not instant then
-			statusLbl.TextTransparency = 1
-			tween(statusLbl, { TextTransparency = 0 }, 0.2)
-		end
-	end
-
-	local hasLink = cfg.GetKeyLink ~= nil or cfg.OnGetKey ~= nil
-	local getBtn
-	if hasLink then
-		getBtn = new("TextButton", {
-			Text = "Get Key", Font = Enum.Font.GothamMedium, TextSize = 12, Size = UDim2.new(0.38, -22, 0, 36), Position = UDim2.fromOffset(18, 184),
-			BackgroundTransparency = 0.3, AutoButtonColor = false, Parent = card,
-		}, { BackgroundColor3 = "Card", TextColor3 = "Text" })
-		corner(getBtn, 8)
-		stroke(getBtn, "Stroke", 0.4)
-		ripple(getBtn)
-	end
-	local checkBtn = new("TextButton", {
-		Text = "Check Key", Font = Enum.Font.GothamBold, TextSize = 12, AutoButtonColor = false, Parent = card,
-		Size = hasLink and UDim2.new(0.62, -14, 0, 36) or UDim2.new(1, -36, 0, 36),
-		Position = hasLink and UDim2.new(0.38, 4, 0, 184) or UDim2.fromOffset(18, 184),
-	}, { BackgroundColor3 = "Accent", TextColor3 = "AccentText" })
-	corner(checkBtn, 8)
-	ripple(checkBtn)
-	checkBtn.MouseEnter:Connect(function() if checkBtn.Text == "Check Key" then tween(checkBtn, { BackgroundColor3 = Theme.Accent2 }, 0.12) end end)
-	checkBtn.MouseLeave:Connect(function() if checkBtn.Text == "Check Key" then tween(checkBtn, { BackgroundColor3 = Theme.Accent }, 0.12) end end)
-
-	local result, done, checking, locked, attempts = nil, false, false, false, 0
-	local function finish(ok, key, data)
-		if done then return end
-		done = true
-		tween(card, { GroupTransparency = 1 }, 0.3)
-		tween(scale, { Scale = ok and 1.06 or 0.92 }, 0.3)
-		tween(dim, { BackgroundTransparency = 1 }, 0.3)
-		task.wait(0.32)
-		closeGui(gui)
-		if ok then safe(cfg.OnSuccess, key, data) else safe(cfg.OnClose) end
-		result = { ok = ok, key = key, data = data }
-	end
-	local function shake()
-		task.spawn(function()
-			local base = card.Position
-			for _, dx in ipairs({ -9, 8, -6, 5, -3, 0 }) do
-				card.Position = UDim2.new(base.X.Scale, base.X.Offset + dx, base.Y.Scale, base.Y.Offset)
-				task.wait(0.04)
-			end
-		end)
-	end
-	local function lock(sec)
-		locked = true
-		setStatus("ใส่คีย์ผิดหลายครั้งเกินไป กรุณารอสักครู่", "error")
-		task.spawn(function()
-			for i = sec, 1, -1 do
-				if not gui.Parent then return end
-				checkBtn.Text = "Wait " .. i .. "s"
-				task.wait(1)
-			end
-			attempts, locked = 0, false
-			checkBtn.Text = "Check Key"
-			setStatus("ลองใหม่ได้แล้ว", "info")
-		end)
-	end
-	local function succeed(key, data)
-		setBind(checkBtn, "BackgroundColor3", "Success", true)
-		checkBtn.Text = "✓ Success"
-		setStatus("ยืนยันคีย์สำเร็จ", "success")
-		flash(Theme.Success)
-		tween(icon, { Size = UDim2.fromOffset(38, 38), Position = UDim2.fromOffset(15, 10) }, 0.2, Enum.EasingStyle.Back)
-		if saveKey and fsAvailable() then pcall(writefile, keyPath(), key) end
-		task.wait(0.8)
-		finish(true, key, data)
-	end
-	local function submit(raw, auto)
-		if checking or locked or done then return end
-		local key = trim(raw)
-		if key == "" then setStatus("กรุณาใส่คีย์ก่อน", "error"); shake() return end
-		checking = true
-		checkBtn.Text = "Checking..."
-		task.spawn(function()
-			local n = 0
-			while checking do
-				n = n % 3 + 1
-				setStatus("กำลังตรวจสอบ" .. string.rep(".", n), "info", true)
-				task.wait(0.35)
-			end
-		end)
-		task.spawn(function()
-			local ok, msg, data = runCheck(cfg, key)
-			checking = false
-			if ok then succeed(key, data) return end
-			checkBtn.Text = "Check Key"
-			flash(Theme.Error)
-			shake()
-			if auto then
-				setStatus("คีย์ที่บันทึกไว้หมดอายุหรือไม่ถูกต้อง", "error")
-				if fsAvailable() then
-					if type(delfile) == "function" then pcall(delfile, keyPath()) else pcall(writefile, keyPath(), "") end
-				end
-			else
-				setStatus(msg or "คีย์ไม่ถูกต้อง", "error")
-				attempts = attempts + 1
-				if attempts >= maxAttempts then lock(cooldown) end
-			end
-		end)
-	end
-
-	checkBtn.MouseButton1Click:Connect(function() submit(input.Text) end)
-	input.FocusLost:Connect(function(enter) if enter then submit(input.Text) end end)
-	closeBtn.MouseButton1Click:Connect(function() task.spawn(finish, false) end)
-	if getBtn then
-		getBtn.MouseButton1Click:Connect(function()
-			safe(cfg.OnGetKey)
-			if cfg.GetKeyLink then
-				local ok = type(setclipboard) == "function" and pcall(setclipboard, cfg.GetKeyLink)
-				setStatus(ok and "คัดลอกลิงก์แล้ว นำไปเปิดในเบราว์เซอร์" or tostring(cfg.GetKeyLink), "info")
-			end
-		end)
-	end
-
-	-- คีย์ที่เคยบันทึกไว้: ตรวจสอบให้อัตโนมัติ
-	if saveKey and fsAvailable() then
-		local okx, exists = pcall(isfile, keyPath())
-		if okx and exists then
-			local okr, txt = pcall(readfile, keyPath())
-			if okr and trim(txt) ~= "" then
-				input.Text = trim(txt)
-				setStatus("กำลังตรวจสอบคีย์ที่บันทึกไว้...", "info", true)
-				task.defer(submit, trim(txt), true)
-			end
-		end
-	end
-
-	while result == nil do
-		if not gui.Parent then return false end
-		task.wait(0.05)
-	end
-	return result.ok, result.key, result.data
-end
-
-----------------------------------------------------------------------
--- Start: Key -> Loading -> Window ในคำสั่งเดียว (คืน nil ถ้าผู้ใช้ปิดหน้า Key)
---   local Window = Library:Start({ KeySystem = {...}, Loading = {...}, Window = {...} })
+-- Start: Loading -> Window ในคำสั่งเดียว
+--   local Window = Library:Start({ Loading = {...} | false, Window = {...} })
 ----------------------------------------------------------------------
 function Library:Start(cfg)
 	cfg = cfg or {}
@@ -1683,13 +1497,6 @@ function Library:Start(cfg)
 	self.Folder = w.Folder or self.Folder
 	self.ConfigName = w.ConfigName or (tostring(t):gsub("[^%w%-_ ]", "_"))
 	self:_prepare({ Theme = w.Theme }, true)
-	if cfg.KeySystem then
-		local kc = cfg.KeySystem
-		if kc == true then kc = {} end
-		kc.Icon = kc.Icon or w.Icon
-		local ok = self:KeySystem(kc)
-		if not ok then return nil end
-	end
 	if cfg.Loading ~= false then
 		local lc = type(cfg.Loading) == "table" and cfg.Loading or {}
 		lc.Title = lc.Title or t
@@ -1716,7 +1523,7 @@ function Library:CreateWindow(config)
 
 	-- ธีม/สี/ปุ่มเปิดเมนู: ค่าที่บันทึกไว้ชนะค่าในสคริปต์ (กันหน้าจอกะพริบ)
 	if type(self._config["ui.accent"]) == "string" then self._accent = fromHex(self._config["ui.accent"]) end
-	self:_loadPreset(resolveTheme(self._config["ui.theme"]) or resolveTheme(config.Theme) or "blue")
+	self:_loadPreset(resolveTheme(self._config["ui.theme"]) or resolveTheme(config.Theme) or "red")
 	local toggleKey = config.ToggleKey or Enum.KeyCode.RightControl
 	if type(self._config["ui.togglekey"]) == "string" then
 		local ok, k = pcall(function() return Enum.KeyCode[self._config["ui.togglekey"]] end)
@@ -1731,8 +1538,8 @@ function Library:CreateWindow(config)
 	table.insert(self.Windows, Window)
 
 	-- Notification holder
-	NotifHolder = new("Frame", { Name = "Notifications", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -16, 0, 16), Size = UDim2.new(0, 260, 1, -32), BackgroundTransparency = 1, Parent = ScreenGui })
-	new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Top, Parent = NotifHolder })
+	NotifHolder = new("Frame", { Name = "Notifications", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -16), Size = UDim2.new(0, 260, 1, -32), BackgroundTransparency = 1, Parent = ScreenGui })
+	new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Bottom, Parent = NotifHolder })
 
 	-- Tooltip
 	TooltipFrame = new("Frame", { Name = "Tooltip", BackgroundTransparency = 0.15, Visible = false, AutomaticSize = Enum.AutomaticSize.XY, ZIndex = 100, Parent = ScreenGui }, { BackgroundColor3 = "Card" })
@@ -1766,28 +1573,52 @@ function Library:CreateWindow(config)
 
 	-- TOP BAR
 	local TopBar = new("Frame", { Name = "TopBar", Size = UDim2.new(1, 0, 0, 48), BackgroundTransparency = 1, ZIndex = 10, Parent = Main })
-	local Brand = new("Frame", { Size = UDim2.new(1, -130, 1, 0), Position = UDim2.fromOffset(16, 0), BackgroundTransparency = 1, ZIndex = 11, Parent = TopBar })
+	local Brand = new("Frame", { Size = UDim2.new(1, -138, 1, 0), Position = UDim2.fromOffset(16, 0), BackgroundTransparency = 1, ZIndex = 11, Parent = TopBar })
 	local BrandIcon = new("ImageLabel", { Size = UDim2.fromOffset(30, 30), Position = UDim2.new(0, 0, 0.5, -15), BackgroundTransparency = 1, Image = iconId, ScaleType = Enum.ScaleType.Fit, ZIndex = 12, Parent = Brand })
 	corner(BrandIcon, 6)
 	Window.BrandIcon = BrandIcon
 	Window.TitleLabel = label(Brand, { Text = titleText, Font = Enum.Font.GothamBold, TextSize = 13, Position = UDim2.fromOffset(38, 7), Size = UDim2.new(1, -38, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 12 }, "Text")
 	Window.SubtitleLabel = label(Brand, { Text = subtitleText, TextSize = 10, Position = UDim2.fromOffset(38, 25), Size = UDim2.new(1, -38, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 12 }, "SubText")
 
-	local Controls = new("Frame", { Size = UDim2.fromOffset(96, 48), Position = UDim2.new(1, -104, 0, 0), BackgroundTransparency = 1, ZIndex = 11, Parent = TopBar })
-	new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Right, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 6), Parent = Controls })
-	local function ctl(text, size, order, hoverKey)
+	local function mkCtl(order, hoverKey)
 		local b = new("TextButton", {
-			Size = UDim2.fromOffset(26, 26), BackgroundTransparency = 0.3, Text = text, Font = Enum.Font.GothamBold, TextSize = size,
-			AutoButtonColor = false, ZIndex = 12, LayoutOrder = order, Parent = Controls,
-		}, { BackgroundColor3 = "Card", TextColor3 = "SubText" })
-		corner(b, 6)
-		b.MouseEnter:Connect(function() tween(b, { BackgroundColor3 = Theme[hoverKey], BackgroundTransparency = 0.1 }, 0.12) end)
-		b.MouseLeave:Connect(function() tween(b, { BackgroundColor3 = Theme.Card, BackgroundTransparency = 0.3 }, 0.12) end)
-		return b
+			Size = UDim2.fromOffset(28, 28), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -(12 + (order - 1) * 34), 0.5, 0),
+			BackgroundTransparency = 0.3, Text = "", AutoButtonColor = false, ZIndex = 20, Parent = TopBar,
+		}, { BackgroundColor3 = "Card" })
+		corner(b, 7)
+		local icons = {}
+		local function tint(key) for _, e in ipairs(icons) do setBind(e[1], e[2], key, true) end end
+		b.MouseEnter:Connect(function() tween(b, { BackgroundColor3 = Theme[hoverKey], BackgroundTransparency = 0.05 }, 0.12); tint("Text") end)
+		b.MouseLeave:Connect(function() tween(b, { BackgroundColor3 = Theme.Card, BackgroundTransparency = 0.3 }, 0.12); tint("SubText") end)
+		return b, icons
 	end
-	local MinBtn = ctl("-", 14, 1, "CardHover")
-	local MaxBtn = ctl("□", 12, 2, "CardHover")
-	local CloseBtn = ctl("×", 16, 3, "Error")
+	local function addBar(b, icons, w, h, rot)
+		local f = new("Frame", { Size = UDim2.fromOffset(w, h), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Rotation = rot or 0, BorderSizePixel = 0, ZIndex = 21, Parent = b }, { BackgroundColor3 = "SubText" })
+		table.insert(icons, { f, "BackgroundColor3" })
+		return f
+	end
+	local function addSquare(b, icons, size, ox, oy)
+		local f = new("Frame", { Size = UDim2.fromOffset(size, size), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, ox, 0.5, oy), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 21, Parent = b })
+		local st = new("UIStroke", { Thickness = 1.5, Parent = f }, { Color = "SubText" })
+		table.insert(icons, { st, "Color" })
+		return f
+	end
+	local CloseBtn, ci = mkCtl(1, "Error")
+	addBar(CloseBtn, ci, 14, 2, 45)
+	addBar(CloseBtn, ci, 14, 2, -45)
+	local MaxBtn, mi = mkCtl(2, "CardHover")
+	local MaxFront = addSquare(MaxBtn, mi, 10, 0, 0)
+	local MaxBack = addSquare(MaxBtn, mi, 8, 2, -2)
+	MaxBack.Visible = false
+	local function setMaxIcon(state)
+		MaxBack.Visible = state
+		MaxFront.Size = UDim2.fromOffset(state and 8 or 10, state and 8 or 10)
+		MaxFront.Position = state and UDim2.new(0.5, -1, 0.5, 1) or UDim2.new(0.5, 0, 0.5, 0)
+	end
+	local MinBtn, ni = mkCtl(3, "CardHover")
+	addBar(MinBtn, ni, 12, 2, 0)
+	local MinPlus = addBar(MinBtn, ni, 2, 12, 0)
+	MinPlus.Visible = false
 
 	local TopLine = new("Frame", { Size = UDim2.new(1, 0, 0, 2), Position = UDim2.fromOffset(0, 48), BorderSizePixel = 0, BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.35, ClipsDescendants = true, ZIndex = 5, Parent = Main })
 	local LineGrad = new("UIGradient", { Parent = TopLine })
@@ -1852,7 +1683,7 @@ function Library:CreateWindow(config)
 	Window.Pages = new("Frame", { Position = UDim2.fromOffset(0, 32), Size = UDim2.new(1, 0, 1, -32), BackgroundTransparency = 1, ClipsDescendants = true, Parent = Content })
 
 	local function applyLayout()
-		local w = Main.AbsoluteSize.X
+		local w = Main.Size.X.Offset
 		local compact = w < 520
 		local sw = compact and 58 or math.clamp(math.floor(w * 0.28), 130, 190)
 		Sidebar.Size = UDim2.new(0, sw, 1, -49)
@@ -1869,21 +1700,48 @@ function Library:CreateWindow(config)
 		Window._compact = compact
 		for _, t in ipairs(Window.Tabs) do t:_setCompact(compact) end
 	end
-	Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyLayout)
+	Main:GetPropertyChangedSignal("Size"):Connect(applyLayout)
 
-	-- Exit modal
-	local Modal = new("Frame", { Name = "Modal", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(8, 8, 8), BackgroundTransparency = 0.45, Visible = false, ZIndex = 100, Parent = Main })
+	-- Exit modal (สีแดงประจำทีม)
+	local Modal = new("TextButton", { Name = "Modal", Text = "", AutoButtonColor = false, Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(5, 3, 3), BackgroundTransparency = 1, Visible = false, ZIndex = 100, Parent = Main })
 	Window.Modal = Modal
-	local MCard = new("Frame", { Size = UDim2.fromOffset(260, 130), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 0.05, ZIndex = 101, Parent = Modal }, { BackgroundColor3 = "Background" })
-	corner(MCard, 8)
-	stroke(MCard, "Accent", 0.5)
-	label(MCard, { Text = "Exit Confirmation", Font = Enum.Font.GothamBold, TextSize = 13, Position = UDim2.fromOffset(14, 14), Size = UDim2.new(1, -28, 0, 20), ZIndex = 102 }, "Text")
-	label(MCard, { Text = "Are you sure you want to close the menu?", TextSize = 11, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Position = UDim2.fromOffset(14, 38), Size = UDim2.new(1, -28, 0, 30), ZIndex = 102 }, "SubText")
-	local YesBtn = new("TextButton", { Text = "Close", Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = Color3.new(1, 1, 1), Size = UDim2.new(0.5, -14, 0, 30), Position = UDim2.new(0, 10, 1, -40), AutoButtonColor = false, ZIndex = 103, Parent = MCard }, { BackgroundColor3 = "Error" })
-	corner(YesBtn, 6)
-	local NoBtn = new("TextButton", { Text = "Cancel", Font = Enum.Font.GothamMedium, TextSize = 11, Size = UDim2.new(0.5, -14, 0, 30), Position = UDim2.new(0.5, 4, 1, -40), BackgroundTransparency = 0.3, AutoButtonColor = false, ZIndex = 103, Parent = MCard }, { BackgroundColor3 = "Card", TextColor3 = "Text" })
-	corner(NoBtn, 6)
-	NoBtn.MouseButton1Click:Connect(function() Modal.Visible = false end)
+	local MCard = new("CanvasGroup", { Size = UDim2.fromOffset(290, 156), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 0.04, GroupTransparency = 1, BorderSizePixel = 0, ZIndex = 101, Parent = Modal }, { BackgroundColor3 = "Background" })
+	corner(MCard, 10)
+	stroke(MCard, "Error", 0.35)
+	local MScale = new("UIScale", { Scale = 0.88, Parent = MCard })
+	new("Frame", { Size = UDim2.new(1, 0, 0, 3), BorderSizePixel = 0, ZIndex = 102, Parent = MCard }, { BackgroundColor3 = "Error" })
+	local badge = new("Frame", { Size = UDim2.fromOffset(38, 38), Position = UDim2.fromOffset(20, 24), BackgroundTransparency = 0.8, ZIndex = 102, Parent = MCard }, { BackgroundColor3 = "Error" })
+	corner(badge, 19)
+	label(badge, { Text = "!", Font = Enum.Font.GothamBold, TextSize = 20, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), ZIndex = 103 }, "Error")
+	label(MCard, { Text = "ปิดเมนู?", Font = Enum.Font.GothamBold, TextSize = 15, Position = UDim2.fromOffset(70, 22), Size = UDim2.new(1, -90, 0, 20), ZIndex = 102 }, "Text")
+	label(MCard, { Text = "ต้องการปิดเมนูนี้ใช่หรือไม่? ถ้าแค่อยากซ่อน ให้กดปุ่มเปิด/ปิดเมนูแทน", TextSize = 11, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Position = UDim2.fromOffset(70, 44), Size = UDim2.new(1, -90, 0, 40), ZIndex = 102 }, "SubText")
+	local YesBtn = new("TextButton", { Text = "ปิดเลย", Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = Color3.new(1, 1, 1), Size = UDim2.new(0.5, -18, 0, 34), Position = UDim2.new(0, 14, 1, -48), AutoButtonColor = false, ZIndex = 103, Parent = MCard }, { BackgroundColor3 = "Error" })
+	corner(YesBtn, 8)
+	ripple(YesBtn)
+	YesBtn.MouseEnter:Connect(function() tween(YesBtn, { BackgroundColor3 = Theme.Error:Lerp(Color3.new(1, 1, 1), 0.15) }, 0.12) end)
+	YesBtn.MouseLeave:Connect(function() tween(YesBtn, { BackgroundColor3 = Theme.Error }, 0.12) end)
+	local NoBtn = new("TextButton", { Text = "ยกเลิก", Font = Enum.Font.GothamMedium, TextSize = 12, Size = UDim2.new(0.5, -18, 0, 34), Position = UDim2.new(0.5, 4, 1, -48), BackgroundTransparency = 0.3, AutoButtonColor = false, ZIndex = 103, Parent = MCard }, { BackgroundColor3 = "Card", TextColor3 = "Text" })
+	corner(NoBtn, 8)
+	ripple(NoBtn)
+	local modalTok = 0
+	local function showModal(state)
+		modalTok = modalTok + 1
+		local tok = modalTok
+		if state then
+			Modal.Visible = true
+			MCard.GroupTransparency = 1
+			MScale.Scale = 0.88
+			tween(Modal, { BackgroundTransparency = 0.35 }, 0.2)
+			tween(MCard, { GroupTransparency = 0 }, 0.2)
+			tween(MScale, { Scale = 1 }, 0.3, Enum.EasingStyle.Back)
+		else
+			tween(Modal, { BackgroundTransparency = 1 }, 0.15)
+			tween(MCard, { GroupTransparency = 1 }, 0.15)
+			tween(MScale, { Scale = 0.92 }, 0.15)
+			task.delay(0.16, function() if modalTok == tok then Modal.Visible = false end end)
+		end
+	end
+	NoBtn.MouseButton1Click:Connect(function() showModal(false) end)
 	YesBtn.MouseButton1Click:Connect(function() Window:Destroy() end)
 
 	-- ย่อ / ขยาย / ปรับขนาด
@@ -1904,7 +1762,7 @@ function Library:CreateWindow(config)
 		isMin = state
 		if activeTween then activeTween:Cancel() end
 		Sidebar.Visible, Content.Visible, TopLine.Visible, Grip.Visible = not state, not state, not state, not state
-		MinBtn.Text = state and "+" or "-"
+		MinPlus.Visible = state
 		if state then
 			normalSize = Main.Size
 			sizeConstraint.MinSize = Vector2.new(0, 0)
@@ -1922,7 +1780,7 @@ function Library:CreateWindow(config)
 		if isMin then setMin(false) return end
 		isMax = state
 		Window._maximized = state
-		MaxBtn.Text = state and "❐" or "□"
+		setMaxIcon(state)
 		if state then
 			preMax = { Size = Main.Size, Pos = Main.Position }
 			local v = viewport()
@@ -1934,7 +1792,7 @@ function Library:CreateWindow(config)
 	Window._setMin, Window._setMax = setMin, setMax
 	Window._resetLayout = function()
 		if isMin then setMin(false) end
-		isMax = false; Window._maximized = false; MaxBtn.Text = "□"
+		isMax = false; Window._maximized = false; setMaxIcon(false); normalSize = nil
 		tween(Main, { Size = UDim2.fromOffset(W, H), Position = UDim2.fromScale(0.5, 0.5) })
 	end
 
@@ -1950,12 +1808,14 @@ function Library:CreateWindow(config)
 			end
 		else
 			if isMin then setMin(false) end
-			Modal.Visible = true
+			showModal(true)
 		end
 	end)
 
 	TopBar.InputBegan:Connect(function(input)
 		if not isPress(input) or isMax then return end
+		-- ไม่เริ่มลากถ้ากดโดนโซนปุ่มควบคุมมุมขวา
+		if input.Position.X > Main.AbsolutePosition.X + Main.AbsoluteSize.X - 124 then return end
 		local startMouse, startPos = input.Position, Main.Position
 		startDrag(function(i)
 			local d = i.Position - startMouse
@@ -1964,7 +1824,7 @@ function Library:CreateWindow(config)
 	end)
 	Grip.InputBegan:Connect(function(input)
 		if not isPress(input) or isMin or isMax then return end
-		local startMouse, startSize, startPos = input.Position, Main.AbsoluteSize, Main.Position
+		local startMouse, startSize, startPos = input.Position, Vector2.new(Main.Size.X.Offset, Main.Size.Y.Offset), Main.Position
 		startDrag(function(i)
 			local d, v = i.Position - startMouse, viewport()
 			local nw = math.clamp(startSize.X + d.X, 300, v.X - 8)
