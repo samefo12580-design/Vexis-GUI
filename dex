@@ -1,5 +1,5 @@
 --[[
-    VORTEX UI  v2.0  (Glass style + Library features merged)
+    VORTEX UI  v2.1  (Glass style + Library features + Key system + Loading)
     ------------------------------------------------------------------
     local Library = loadstring(readfile("VortexUI.lua"))()   -- หรือ loadstring(game:HttpGet(URL))()
 
@@ -33,6 +33,29 @@
 
     ธีมที่มี: blue, violet, emerald, sunset, amber, midnight, graphite, ocean, rose, forest, honey, iris
     (ใช้ key หรือชื่อที่แสดงก็ได้ ไม่สนตัวพิมพ์เล็กใหญ่)
+
+    ---------------- KEY SYSTEM + LOADING ----------------
+    -- คำสั่งเดียวจบ: Key -> Loading -> Window  (คืน nil ถ้าผู้ใช้กดปิดหน้า Key)
+    local Window = Library:Start({
+        KeySystem = {
+            Title = "My Hub", GetKeyLink = "https://example.com/getkey",
+            Url = "https://api.yoursite.com/check",   -- หรือใช้ Validate = function(key, info) ... end
+            -- Method = "POST" | "GET", Headers = {...}, MaxAttempts = 5, Cooldown = 30, SaveKey = true,
+            -- OnSuccess = function(key, data) end, OnClose = function() end,
+        },
+        Loading = { Steps = { "Checking...", "Loading modules", "Done" }, Duration = 3 },  -- Loading = false เพื่อข้าม
+        Window = { Title = "My Hub", Theme = "midnight" },
+    })
+    if not Window then return end
+
+    -- แยกเรียกเองก็ได้:
+    local ok, key, data = Library:KeySystem({...})      -- yield จนกว่าจะผ่าน (ok=false = ผู้ใช้ปิด)
+    local L = Library:ShowLoading({ Manual = true })    -- L:Set(0.5, "ข้อความ") ... L:Finish()
+
+    -- Backend contract (โหมด Url):
+    --   POST JSON  { key, hwid, userId, username, placeId, jobId, time }   (GET = query string)
+    --   ตอบกลับ     { "valid": true|false, "message": "ข้อความ", "data": {...} }  หรือข้อความ "true"/"valid"/"ok"
+    --   โหมด Validate: return true/false, "ข้อความ", data  (จะ HttpGet เองก็ได้)
 --]]
 
 local TweenService = game:GetService("TweenService")
@@ -44,7 +67,7 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "2.0.0",
+	Version = "2.1.0",
 	Flags = {}, Elements = {}, Windows = {},
 	Themes = {}, ThemeOrder = {}, Theme = {}, ThemeName = "blue",
 	Folder = "VortexUI", ConfigName = "main",
@@ -58,7 +81,7 @@ WindowMT.__index = WindowMT
 TabMT.__index = TabMT
 
 local NotifHolder, TooltipFrame, TooltipLabel
-local activeDrag
+local activeDrag, activeEnd
 
 ----------------------------------------------------------------------
 -- Helpers
@@ -88,7 +111,7 @@ local function isPress(input)
 end
 
 -- ระบบลาก (ใช้ร่วมกันทั้ง slider, ลากหน้าต่าง, ปรับขนาด)
-local function startDrag(fn) activeDrag = fn end
+local function startDrag(fn, onEnd) activeDrag, activeEnd = fn, onEnd end
 
 local function viewport()
 	local cam = workspace.CurrentCamera
@@ -145,6 +168,24 @@ end
 local function onTheme(inst, fn)
 	table.insert(Library._paints, { inst = inst, fn = fn })
 	fn()
+end
+
+-- เอฟเฟกต์คลื่นน้ำตอนกดปุ่ม
+local function ripple(btn)
+	btn.ClipsDescendants = true
+	btn.InputBegan:Connect(function(input)
+		if not isPress(input) then return end
+		local abs, size = btn.AbsolutePosition, btn.AbsoluteSize
+		local x = math.clamp(input.Position.X - abs.X, 0, size.X)
+		local c = new("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(x, size.Y / 2), Size = UDim2.fromOffset(0, 0),
+			BackgroundTransparency = 0.7, BorderSizePixel = 0, ZIndex = btn.ZIndex + 1, Parent = btn,
+		}, { BackgroundColor3 = "Accent" })
+		corner(c, 999)
+		local d = size.X * 1.5
+		tween(c, { Size = UDim2.fromOffset(d, d), BackgroundTransparency = 1 }, 0.5)
+		task.delay(0.52, function() c:Destroy() end)
+	end)
 end
 
 ----------------------------------------------------------------------
@@ -422,7 +463,13 @@ function Library:_init()
 			safe(activeDrag, input)
 		end
 	end)
-	conn(UserInputService.InputEnded, function(input) if isPress(input) then activeDrag = nil end end)
+	conn(UserInputService.InputEnded, function(input)
+		if isPress(input) then
+			local e = activeEnd
+			activeDrag, activeEnd = nil, nil
+			if e then safe(e) end
+		end
+	end)
 	conn(UserInputService.InputBegan, function(input, gpe)
 		for _, handler in ipairs(self._keybinds) do handler(input, gpe) end
 	end)
@@ -435,7 +482,7 @@ function Library:Unload()
 	for k in pairs(self.Flags) do self.Flags[k] = nil end
 	for k in pairs(self.Elements) do self.Elements[k] = nil end
 	self._inited, self._listening = false, false
-	NotifHolder, TooltipFrame, TooltipLabel, activeDrag = nil, nil, nil, nil
+	NotifHolder, TooltipFrame, TooltipLabel, activeDrag, activeEnd = nil, nil, nil, nil, nil
 end
 
 ----------------------------------------------------------------------
@@ -559,6 +606,7 @@ function TabMT:CreateButton(text, callback)
 	}, { BackgroundColor3 = "Card", TextColor3 = "Text" })
 	corner(btn, 6)
 	local st = stroke(btn, "Stroke", 0.4)
+	ripple(btn)
 	btn.MouseEnter:Connect(function()
 		tween(btn, { BackgroundColor3 = Theme.CardHover }, 0.12)
 		tween(st, { Color = Theme.Accent, Transparency = 0.2 }, 0.12)
@@ -602,6 +650,8 @@ function TabMT:CreateToggle(text, default, callback, flag, desc)
 		if anim then
 			tween(Switch, { BackgroundTransparency = state and 0 or 0.3 }, 0.15)
 			tween(Knob, { Position = pos }, 0.15)
+			tween(Knob, { Size = UDim2.fromOffset(17, 12) }, 0.07)
+			task.delay(0.08, function() tween(Knob, { Size = UDim2.fromOffset(12, 12) }, 0.12, Enum.EasingStyle.Back) end)
 		else
 			Switch.BackgroundTransparency = state and 0 or 0.3
 			Knob.Position = pos
@@ -649,7 +699,7 @@ function TabMT:CreateSlider(text, min, max, default, callback, flag, increment)
 	corner(track, 2)
 	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0, Parent = track }, { BackgroundColor3 = "Accent" })
 	corner(fill, 2)
-	local knob = new("Frame", { Size = UDim2.fromOffset(10, 10), Position = UDim2.new(1, -5, 0.5, -5), BackgroundColor3 = Color3.new(1, 1, 1), Parent = fill })
+	local knob = new("Frame", { Size = UDim2.fromOffset(10, 10), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, 0, 0.5, 0), BackgroundColor3 = Color3.new(1, 1, 1), Parent = fill })
 	corner(knob, 5)
 	local hit = new("TextButton", { Size = UDim2.new(1, 0, 0, 22), Position = UDim2.new(0, 0, 0.5, -11), BackgroundTransparency = 1, Text = "", Parent = track })
 
@@ -674,7 +724,11 @@ function TabMT:CreateSlider(text, min, max, default, callback, flag, increment)
 		obj:Set(min + ratio * span)
 	end
 	hit.InputBegan:Connect(function(input)
-		if isPress(input) then fromInput(input); startDrag(fromInput) end
+		if isPress(input) then
+			tween(knob, { Size = UDim2.fromOffset(15, 15) }, 0.12, Enum.EasingStyle.Back)
+			fromInput(input)
+			startDrag(fromInput, function() tween(knob, { Size = UDim2.fromOffset(10, 10) }, 0.15) end)
+		end
 	end)
 	return register(self, obj, flag, callback)
 end
@@ -723,6 +777,8 @@ function TabMT:CreateDropdown(text, options, default, callback, flag)
 				AutoButtonColor = false, LayoutOrder = i, Parent = holder,
 			})
 			corner(b, 4)
+			b.MouseEnter:Connect(function() tween(b, { BackgroundTransparency = 0.4 }, 0.1) end)
+			b.MouseLeave:Connect(function() tween(b, { BackgroundTransparency = 0 }, 0.12) end)
 			b.MouseButton1Click:Connect(function() obj:Set(o); close() end)
 		end
 		holder.Size = UDim2.new(1, -16, 0, listHeight())
@@ -1032,10 +1088,22 @@ function WindowMT:SetIcon(id) if self.BrandIcon then self.BrandIcon.Image = id e
 function WindowMT:SetTitle(t) self.TitleLabel.Text = tostring(t) end
 function WindowMT:SetSubtitle(t) self.SubtitleLabel.Text = tostring(t) end
 function WindowMT:SetVisible(v)
-	self.Main.Visible = v and true or false
-	if not v then self.Modal.Visible = false end
+	v = v and true or false
+	self._shown = v
+	self._visTok = (self._visTok or 0) + 1
+	local tok = self._visTok
+	if v then
+		self.Main.Visible = true
+		tween(self.Main, { GroupTransparency = 0 }, 0.22)
+		tween(self._scale, { Scale = 1 }, 0.28, Enum.EasingStyle.Back)
+	else
+		self.Modal.Visible = false
+		tween(self.Main, { GroupTransparency = 1 }, 0.16)
+		tween(self._scale, { Scale = 0.94 }, 0.16)
+		task.delay(0.17, function() if self._visTok == tok then self.Main.Visible = false end end)
+	end
 end
-function WindowMT:Toggle() self:SetVisible(not self.Main.Visible) end
+function WindowMT:Toggle() self:SetVisible(not self._shown) end
 function WindowMT:Notify(...) Library:Notify(...) end
 function WindowMT:SetTheme(k) return Library:SetTheme(k) end
 function WindowMT:SaveConfig(s) return Library:SaveConfig(s) end
@@ -1046,10 +1114,16 @@ function WindowMT:Maximize() self._setMax(not self._maximized) end
 function WindowMT:ResetLayout() self._resetLayout() end
 
 function WindowMT:Destroy()
-	for i, w in ipairs(Library.Windows) do if w == self then table.remove(Library.Windows, i) break end end
-	for i, g in ipairs(Library._guis) do if g == self.ScreenGui then table.remove(Library._guis, i) break end end
-	if self.ScreenGui then self.ScreenGui:Destroy() end
-	if #Library.Windows == 0 then Library:Unload() end
+	if self._dying then return end
+	self._dying = true
+	tween(self.Main, { GroupTransparency = 1 }, 0.22)
+	tween(self._scale, { Scale = 0.9 }, 0.22)
+	task.delay(0.24, function()
+		for i, w in ipairs(Library.Windows) do if w == self then table.remove(Library.Windows, i) break end end
+		for i, g in ipairs(Library._guis) do if g == self.ScreenGui then table.remove(Library._guis, i) break end end
+		if self.ScreenGui then self.ScreenGui:Destroy() end
+		if #Library.Windows == 0 then Library:Unload() end
+	end)
 end
 
 function WindowMT:SelectTab(tab)
@@ -1060,7 +1134,11 @@ function WindowMT:SelectTab(tab)
 		bindColor(t.Label, "TextColor3", "SubText")
 		bindColor(t.IconObj, t.IconProp, "SubText")
 	end
+	tab.MainPage.Position = UDim2.fromOffset(0, 16)
+	tab.Section.BackgroundTransparency = 1
 	tab.MainPage.Visible = true
+	tween(tab.MainPage, { Position = UDim2.fromOffset(0, 0) }, 0.32, Enum.EasingStyle.Quint)
+	tween(tab.Section, { BackgroundTransparency = 0.35 }, 0.35)
 	tween(tab.Button, { BackgroundTransparency = 0.25 }, 0.15)
 	tab.Indicator.BackgroundTransparency = 0
 	bindColor(tab.Label, "TextColor3", "Text")
@@ -1112,7 +1190,7 @@ function WindowMT:CreateTab(name, icon, order, internal)
 	pad(page, 0, 0, 0, 10)
 
 	local tab = setmetatable({
-		Page = section, MainPage = page, Button = btn, Label = lbl, Indicator = indicator, IconObj = iconObj, IconProp = iconProp,
+		Page = section, Section = section, MainPage = page, Button = btn, Label = lbl, Indicator = indicator, IconObj = iconObj, IconProp = iconProp,
 		Name = name, Window = win, _n = 0,
 	}, TabMT)
 	function tab:Select() win:SelectTab(tab) end
@@ -1126,6 +1204,8 @@ function WindowMT:CreateTab(name, icon, order, internal)
 	btn.MouseEnter:Connect(function() if win.ActiveTab ~= tab then tween(btn, { BackgroundTransparency = 0.7 }, 0.1) end end)
 	btn.MouseLeave:Connect(function() if win.ActiveTab ~= tab then tween(btn, { BackgroundTransparency = 1 }, 0.12) end end)
 
+	lbl.TextTransparency = 1
+	task.delay(0.2 + #self.Tabs * 0.06, function() if lbl.Parent then tween(lbl, { TextTransparency = 0 }, 0.3) end end)
 	table.insert(self.Tabs, tab)
 	if not internal and not self._userTab then
 		self._userTab = true
@@ -1148,7 +1228,7 @@ function WindowMT:_buildSettings()
 	local wn = tab:CreateGroupbox("WINDOW")
 	wn:CreateToggleMenuKeybind("Toggle key")
 	wn:CreateButton("Reset window size and position", function() self:ResetLayout() end)
-	wn:CreateButton("Unload UI", function() Library:Unload() end)
+	wn:CreateButton("Unload UI", function() for _, w in ipairs(table.clone(Library.Windows)) do w:Destroy() end end)
 
 	local cf = tab:CreateGroupbox("CONFIG")
 	cf:CreateParagraph("Auto-save", fsAvailable()
@@ -1184,6 +1264,441 @@ local function parentGui(gui)
 	end
 end
 
+----------------------------------------------------------------------
+-- LOADING SCREEN / KEY SYSTEM / START
+----------------------------------------------------------------------
+function Library:_prepare(cfg, readCfg)
+	self:_init()
+	if readCfg then
+		self:_readConfig()
+		if type(self._config["ui.accent"]) == "string" then self._accent = fromHex(self._config["ui.accent"]) end
+	end
+	local saved = readCfg and resolveTheme(self._config["ui.theme"]) or nil
+	self:_loadPreset(saved or resolveTheme(cfg.Theme) or resolveTheme(self.ThemeName) or "blue")
+end
+
+local function newGui(name)
+	local g = new("ScreenGui", { Name = name, ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 1000, ZIndexBehavior = Enum.ZIndexBehavior.Sibling })
+	parentGui(g)
+	table.insert(Library._guis, g)
+	return g
+end
+
+local function closeGui(g)
+	for i, x in ipairs(Library._guis) do if x == g then table.remove(Library._guis, i) break end end
+	pcall(function() g:Destroy() end)
+end
+
+-- การ์ดกระจก + ขอบ gradient + แอนิเมชันเด้งเข้า (คืนค่า card, scale, ฟังก์ชันกะพริบขอบ)
+local function glassCard(parent, w, h)
+	local card = new("CanvasGroup", {
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(w, h),
+		BackgroundTransparency = 0.08, GroupTransparency = 1, BorderSizePixel = 0, Parent = parent,
+	}, { BackgroundColor3 = "Background" })
+	corner(card, 12)
+	local scale = new("UIScale", { Scale = 0.9, Parent = card })
+	local st = new("UIStroke", { Thickness = 1.2, Transparency = 0.25, Parent = card })
+	local grad = new("UIGradient", { Rotation = 35, Parent = st })
+	local function paint()
+		grad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Theme.Accent), ColorSequenceKeypoint.new(0.5, Theme.Stroke), ColorSequenceKeypoint.new(1, Theme.Accent2),
+		})
+	end
+	onTheme(card, paint)
+	tween(card, { GroupTransparency = 0 }, 0.3)
+	tween(scale, { Scale = 1 }, 0.38, Enum.EasingStyle.Back)
+	local function flash(color)
+		grad.Color = ColorSequence.new(color)
+		task.delay(0.6, paint)
+	end
+	return card, scale, flash
+end
+
+----------------------------------------------------------------------
+-- Loading screen
+--   Library:ShowLoading({ Title, Subtitle, Icon, Steps = {...}, Duration = 3, Yield = true, OnFinish = fn })
+--   โหมดเรียกเอง: local L = Library:ShowLoading({ Manual = true })
+--                 L:Set(0.4, "Loading modules")  ...  L:Finish()
+----------------------------------------------------------------------
+function Library:ShowLoading(cfg)
+	cfg = cfg or {}
+	self:_prepare(cfg, false)
+	local gui = newGui("VortexLoader")
+	local dim = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, Parent = gui })
+	tween(dim, { BackgroundTransparency = cfg.Dim or 0.4 }, 0.3)
+	local card, scale = glassCard(gui, 320, 196)
+
+	-- วงแหวนหมุน + โลโก้เต้นเป็นจังหวะ
+	local ring = new("Frame", { Size = UDim2.fromOffset(64, 64), Position = UDim2.new(0.5, -32, 0, 22), BackgroundTransparency = 1, Parent = card })
+	corner(ring, 32)
+	local rs = new("UIStroke", { Thickness = 3, Color = Color3.new(1, 1, 1), Parent = ring })
+	local rg = new("UIGradient", {
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.65, 0.35), NumberSequenceKeypoint.new(1, 1) }),
+		Parent = rs,
+	})
+	onTheme(ring, function() rg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
+	TweenService:Create(ring, TweenInfo.new(1.1, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), { Rotation = 360 }):Play()
+	local logo = new("ImageLabel", {
+		Image = cfg.Icon or "rbxassetid://75491720746957", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0, 54), Size = UDim2.fromOffset(34, 34), ScaleType = Enum.ScaleType.Fit, Parent = card,
+	})
+	corner(logo, 6)
+	TweenService:Create(logo, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Size = UDim2.fromOffset(40, 40) }):Play()
+
+	label(card, { Text = cfg.Title or "Loading", Font = Enum.Font.GothamBold, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 98), Size = UDim2.new(1, 0, 0, 20) }, "Text")
+	local stepLbl = label(card, { Text = cfg.Subtitle or "", TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 120), Size = UDim2.new(1, 0, 0, 16) }, "SubText")
+	local track = new("Frame", { Size = UDim2.new(1, -48, 0, 6), Position = UDim2.fromOffset(24, 152), BackgroundTransparency = 0.2, Parent = card }, { BackgroundColor3 = "Input" })
+	corner(track, 3)
+	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0, BackgroundColor3 = Color3.new(1, 1, 1), Parent = track })
+	corner(fill, 3)
+	local fg = new("UIGradient", { Parent = fill })
+	onTheme(fill, function() fg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
+	local pct = label(card, { Text = "0%", TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 164), Size = UDim2.new(1, 0, 0, 14) }, "SubText")
+
+	local ctrl, done = {}, false
+	local function setStep(text)
+		if text == nil or stepLbl.Text == text then return end
+		tween(stepLbl, { TextTransparency = 1 }, 0.1)
+		task.delay(0.1, function()
+			if not stepLbl.Parent then return end
+			stepLbl.Text = text
+			tween(stepLbl, { TextTransparency = 0 }, 0.18)
+		end)
+	end
+	function ctrl:Set(p, text)
+		if done then return end
+		p = math.clamp(tonumber(p) or 0, 0, 1)
+		tween(fill, { Size = UDim2.fromScale(p, 1) }, 0.3, Enum.EasingStyle.Quad)
+		pct.Text = math.floor(p * 100 + 0.5) .. "%"
+		setStep(text)
+	end
+	function ctrl:Finish(text)
+		if done then return end
+		ctrl:Set(1, text or cfg.DoneText or "Ready")
+		done = true
+		task.wait(0.45)
+		tween(card, { GroupTransparency = 1 }, 0.3)
+		tween(scale, { Scale = 1.08 }, 0.3)
+		tween(dim, { BackgroundTransparency = 1 }, 0.3)
+		task.wait(0.32)
+		closeGui(gui)
+		safe(cfg.OnFinish)
+	end
+
+	if cfg.Manual then return ctrl end
+	local steps = cfg.Steps or { "Initializing", "Loading modules", "Applying theme", "Almost there" }
+	local total = tonumber(cfg.Duration) or 3.2
+	local function run()
+		for i, s in ipairs(steps) do
+			if not gui.Parent then return end
+			ctrl:Set((i - 1) / #steps + 0.04, s)
+			task.wait(total / #steps * (0.7 + math.random() * 0.6))
+		end
+		ctrl:Finish()
+	end
+	if cfg.Yield == false then task.spawn(run) else run() end
+	return ctrl
+end
+
+----------------------------------------------------------------------
+-- Key system (ต่อ backend ได้ 2 แบบ)
+--   1) Validate = function(key, info) return true/false, "ข้อความ", data end
+--   2) Url = "https://api.yoursite.com/check"  (+ Method, Headers)
+--
+--   Request (POST, JSON):  { key, hwid, userId, username, placeId, jobId, time }
+--   Request (GET): ?key=..&hwid=..&userId=..&username=..&placeId=..
+--   Response (JSON):       { "valid": true|false, "message": "ข้อความ", "data": {...} }
+--                          หรือข้อความล้วน "true" / "valid" / "ok"
+----------------------------------------------------------------------
+local function trim(s) return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")) end
+
+local function getHwid()
+	local ok, id = pcall(function() return game:GetService("RbxAnalyticsService"):GetClientId() end)
+	return ok and id or "unknown"
+end
+
+local function buildInfo(key)
+	return { key = key, hwid = getHwid(), userId = LocalPlayer.UserId, username = LocalPlayer.Name, placeId = game.PlaceId, jobId = game.JobId, time = os.time() }
+end
+
+local function httpCheck(cfg, info)
+	local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
+		or (syn and type(syn.request) == "function" and syn.request) or nil
+	if not req then return false, "Executor ไม่รองรับ HTTP request" end
+	local method = tostring(cfg.Method or "POST"):upper()
+	local url = tostring(cfg.Url)
+	local headers = { ["Content-Type"] = "application/json" }
+	for k, v in pairs(cfg.Headers or {}) do headers[k] = v end
+	local body
+	if method == "GET" then
+		local q = {}
+		for _, k in ipairs({ "key", "hwid", "userId", "username", "placeId" }) do
+			table.insert(q, k .. "=" .. HttpService:UrlEncode(tostring(info[k])))
+		end
+		url = url .. (url:find("?", 1, true) and "&" or "?") .. table.concat(q, "&")
+	else
+		body = HttpService:JSONEncode(info)
+	end
+	local ok, res = pcall(req, { Url = url, Method = method, Headers = headers, Body = body })
+	if not ok or type(res) ~= "table" then return false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้" end
+	local code = tonumber(res.StatusCode) or 0
+	local text = tostring(res.Body or "")
+	local okJ, data = pcall(function() return HttpService:JSONDecode(text) end)
+	if okJ and type(data) == "table" then
+		return data.valid == true or data.success == true, data.message, data.data or data
+	end
+	local t = (text:lower():gsub("%s+", ""))
+	if code >= 200 and code < 300 and (t == "true" or t == "valid" or t == "ok" or t == "1") then return true end
+	if code >= 500 then return false, "เซิร์ฟเวอร์ผิดพลาด (" .. code .. ")" end
+	return false, "คีย์ไม่ถูกต้อง"
+end
+
+local function runCheck(cfg, key)
+	local info = buildInfo(key)
+	local ok, a, b, c = pcall(function()
+		if cfg.Validate then return cfg.Validate(key, info) end
+		if cfg.Url then return httpCheck(cfg, info) end
+		return false, "ยังไม่ได้ตั้งค่า Validate หรือ Url"
+	end)
+	if not ok then return false, "เกิดข้อผิดพลาด: " .. tostring(a) end
+	if type(a) == "table" then return (a.valid == true or a.success == true), a.message, a.data or a end
+	return a == true, b, c
+end
+
+local function keyPath()
+	if hasFolders() then
+		pcall(function() if not isfolder(Library.Folder) then makefolder(Library.Folder) end end)
+		return Library.Folder .. "/key.txt"
+	end
+	return Library.Folder .. "_key.txt"
+end
+
+-- return: ok, key, data  (ok=false ถ้าผู้ใช้กดปิดหน้าต่าง)
+function Library:KeySystem(cfg)
+	cfg = cfg or {}
+	self:_prepare(cfg, false)
+	if cfg.Folder then self.Folder = cfg.Folder end
+	local maxAttempts = tonumber(cfg.MaxAttempts) or 5
+	local cooldown = tonumber(cfg.Cooldown) or 30
+	local saveKey = cfg.SaveKey ~= false
+
+	local gui = newGui("VortexKeyUI")
+	local dim = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, Parent = gui })
+	tween(dim, { BackgroundTransparency = 0.45 }, 0.3)
+	local card, scale, flash = glassCard(gui, 360, 244)
+
+	-- header (ลากได้)
+	local header = new("Frame", { Size = UDim2.new(1, 0, 0, 58), BackgroundTransparency = 1, Parent = card })
+	local icon = new("ImageLabel", { Image = cfg.Icon or "rbxassetid://75491720746957", BackgroundTransparency = 1, Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(18, 13), ScaleType = Enum.ScaleType.Fit, Parent = header })
+	corner(icon, 6)
+	label(header, { Text = cfg.Title or "Key System", Font = Enum.Font.GothamBold, TextSize = 14, Position = UDim2.fromOffset(60, 12), Size = UDim2.new(1, -110, 0, 18) }, "Text")
+	label(header, { Text = cfg.Subtitle or "กรอกคีย์เพื่อใช้งาน", TextSize = 10, Position = UDim2.fromOffset(60, 30), Size = UDim2.new(1, -110, 0, 14) }, "SubText")
+	local closeBtn = new("TextButton", {
+		Text = "×", Font = Enum.Font.GothamBold, TextSize = 16, Size = UDim2.fromOffset(26, 26), Position = UDim2.new(1, -40, 0, 16),
+		BackgroundTransparency = 0.3, AutoButtonColor = false, Parent = header,
+	}, { BackgroundColor3 = "Card", TextColor3 = "SubText" })
+	corner(closeBtn, 6)
+	closeBtn.MouseEnter:Connect(function() tween(closeBtn, { BackgroundColor3 = Theme.Error, BackgroundTransparency = 0.1 }, 0.12) end)
+	closeBtn.MouseLeave:Connect(function() tween(closeBtn, { BackgroundColor3 = Theme.Card, BackgroundTransparency = 0.3 }, 0.12) end)
+	local line = new("Frame", { Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 58), BorderSizePixel = 0, BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.4, Parent = card })
+	local lg = new("UIGradient", { Parent = line })
+	onTheme(line, function() lg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
+
+	header.InputBegan:Connect(function(input)
+		if not isPress(input) then return end
+		local m0, p0 = input.Position, card.Position
+		startDrag(function(i)
+			local d = i.Position - m0
+			card.Position = UDim2.new(p0.X.Scale, p0.X.Offset + d.X, p0.Y.Scale, p0.Y.Offset + d.Y)
+		end)
+	end)
+
+	label(card, {
+		Text = cfg.Note or "รับคีย์ได้จากปุ่ม Get Key แล้วนำมาวางในช่องด้านล่าง", TextSize = 11, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.fromOffset(18, 68), Size = UDim2.new(1, -36, 0, 30),
+	}, "SubText")
+
+	local inputBox = new("Frame", { Size = UDim2.new(1, -36, 0, 38), Position = UDim2.fromOffset(18, 104), BackgroundTransparency = 0.1, Parent = card }, { BackgroundColor3 = "Input" })
+	corner(inputBox, 8)
+	local inStroke = stroke(inputBox, "Stroke", 0.3)
+	local input = new("TextBox", {
+		Text = "", PlaceholderText = cfg.Placeholder or "Enter your key...", Font = Enum.Font.Gotham, TextSize = 12, ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left, BackgroundTransparency = 1, Size = UDim2.new(1, -24, 1, 0), Position = UDim2.fromOffset(12, 0), Parent = inputBox,
+	}, { TextColor3 = "Text", PlaceholderColor3 = "SubText" })
+	input.Focused:Connect(function() tween(inStroke, { Color = Theme.Accent, Transparency = 0 }, 0.15) end)
+	input.FocusLost:Connect(function() tween(inStroke, { Color = Theme.Stroke, Transparency = 0.3 }, 0.15) end)
+
+	local statusLbl = label(card, { Text = "", TextSize = 11, Position = UDim2.fromOffset(18, 150), Size = UDim2.new(1, -36, 0, 16) }, "SubText")
+	local function setStatus(text, kind, instant)
+		local key = kind == "error" and "Error" or kind == "success" and "Success" or "SubText"
+		statusLbl.Text = text or ""
+		setBind(statusLbl, "TextColor3", key, not instant)
+		if not instant then
+			statusLbl.TextTransparency = 1
+			tween(statusLbl, { TextTransparency = 0 }, 0.2)
+		end
+	end
+
+	local hasLink = cfg.GetKeyLink ~= nil or cfg.OnGetKey ~= nil
+	local getBtn
+	if hasLink then
+		getBtn = new("TextButton", {
+			Text = "Get Key", Font = Enum.Font.GothamMedium, TextSize = 12, Size = UDim2.new(0.38, -22, 0, 36), Position = UDim2.fromOffset(18, 184),
+			BackgroundTransparency = 0.3, AutoButtonColor = false, Parent = card,
+		}, { BackgroundColor3 = "Card", TextColor3 = "Text" })
+		corner(getBtn, 8)
+		stroke(getBtn, "Stroke", 0.4)
+		ripple(getBtn)
+	end
+	local checkBtn = new("TextButton", {
+		Text = "Check Key", Font = Enum.Font.GothamBold, TextSize = 12, AutoButtonColor = false, Parent = card,
+		Size = hasLink and UDim2.new(0.62, -14, 0, 36) or UDim2.new(1, -36, 0, 36),
+		Position = hasLink and UDim2.new(0.38, 4, 0, 184) or UDim2.fromOffset(18, 184),
+	}, { BackgroundColor3 = "Accent", TextColor3 = "AccentText" })
+	corner(checkBtn, 8)
+	ripple(checkBtn)
+	checkBtn.MouseEnter:Connect(function() if checkBtn.Text == "Check Key" then tween(checkBtn, { BackgroundColor3 = Theme.Accent2 }, 0.12) end end)
+	checkBtn.MouseLeave:Connect(function() if checkBtn.Text == "Check Key" then tween(checkBtn, { BackgroundColor3 = Theme.Accent }, 0.12) end end)
+
+	local result, done, checking, locked, attempts = nil, false, false, false, 0
+	local function finish(ok, key, data)
+		if done then return end
+		done = true
+		tween(card, { GroupTransparency = 1 }, 0.3)
+		tween(scale, { Scale = ok and 1.06 or 0.92 }, 0.3)
+		tween(dim, { BackgroundTransparency = 1 }, 0.3)
+		task.wait(0.32)
+		closeGui(gui)
+		if ok then safe(cfg.OnSuccess, key, data) else safe(cfg.OnClose) end
+		result = { ok = ok, key = key, data = data }
+	end
+	local function shake()
+		task.spawn(function()
+			local base = card.Position
+			for _, dx in ipairs({ -9, 8, -6, 5, -3, 0 }) do
+				card.Position = UDim2.new(base.X.Scale, base.X.Offset + dx, base.Y.Scale, base.Y.Offset)
+				task.wait(0.04)
+			end
+		end)
+	end
+	local function lock(sec)
+		locked = true
+		setStatus("ใส่คีย์ผิดหลายครั้งเกินไป กรุณารอสักครู่", "error")
+		task.spawn(function()
+			for i = sec, 1, -1 do
+				if not gui.Parent then return end
+				checkBtn.Text = "Wait " .. i .. "s"
+				task.wait(1)
+			end
+			attempts, locked = 0, false
+			checkBtn.Text = "Check Key"
+			setStatus("ลองใหม่ได้แล้ว", "info")
+		end)
+	end
+	local function succeed(key, data)
+		setBind(checkBtn, "BackgroundColor3", "Success", true)
+		checkBtn.Text = "✓ Success"
+		setStatus("ยืนยันคีย์สำเร็จ", "success")
+		flash(Theme.Success)
+		tween(icon, { Size = UDim2.fromOffset(38, 38), Position = UDim2.fromOffset(15, 10) }, 0.2, Enum.EasingStyle.Back)
+		if saveKey and fsAvailable() then pcall(writefile, keyPath(), key) end
+		task.wait(0.8)
+		finish(true, key, data)
+	end
+	local function submit(raw, auto)
+		if checking or locked or done then return end
+		local key = trim(raw)
+		if key == "" then setStatus("กรุณาใส่คีย์ก่อน", "error"); shake() return end
+		checking = true
+		checkBtn.Text = "Checking..."
+		task.spawn(function()
+			local n = 0
+			while checking do
+				n = n % 3 + 1
+				setStatus("กำลังตรวจสอบ" .. string.rep(".", n), "info", true)
+				task.wait(0.35)
+			end
+		end)
+		task.spawn(function()
+			local ok, msg, data = runCheck(cfg, key)
+			checking = false
+			if ok then succeed(key, data) return end
+			checkBtn.Text = "Check Key"
+			flash(Theme.Error)
+			shake()
+			if auto then
+				setStatus("คีย์ที่บันทึกไว้หมดอายุหรือไม่ถูกต้อง", "error")
+				if fsAvailable() then
+					if type(delfile) == "function" then pcall(delfile, keyPath()) else pcall(writefile, keyPath(), "") end
+				end
+			else
+				setStatus(msg or "คีย์ไม่ถูกต้อง", "error")
+				attempts = attempts + 1
+				if attempts >= maxAttempts then lock(cooldown) end
+			end
+		end)
+	end
+
+	checkBtn.MouseButton1Click:Connect(function() submit(input.Text) end)
+	input.FocusLost:Connect(function(enter) if enter then submit(input.Text) end end)
+	closeBtn.MouseButton1Click:Connect(function() task.spawn(finish, false) end)
+	if getBtn then
+		getBtn.MouseButton1Click:Connect(function()
+			safe(cfg.OnGetKey)
+			if cfg.GetKeyLink then
+				local ok = type(setclipboard) == "function" and pcall(setclipboard, cfg.GetKeyLink)
+				setStatus(ok and "คัดลอกลิงก์แล้ว นำไปเปิดในเบราว์เซอร์" or tostring(cfg.GetKeyLink), "info")
+			end
+		end)
+	end
+
+	-- คีย์ที่เคยบันทึกไว้: ตรวจสอบให้อัตโนมัติ
+	if saveKey and fsAvailable() then
+		local okx, exists = pcall(isfile, keyPath())
+		if okx and exists then
+			local okr, txt = pcall(readfile, keyPath())
+			if okr and trim(txt) ~= "" then
+				input.Text = trim(txt)
+				setStatus("กำลังตรวจสอบคีย์ที่บันทึกไว้...", "info", true)
+				task.defer(submit, trim(txt), true)
+			end
+		end
+	end
+
+	while result == nil do
+		if not gui.Parent then return false end
+		task.wait(0.05)
+	end
+	return result.ok, result.key, result.data
+end
+
+----------------------------------------------------------------------
+-- Start: Key -> Loading -> Window ในคำสั่งเดียว (คืน nil ถ้าผู้ใช้ปิดหน้า Key)
+--   local Window = Library:Start({ KeySystem = {...}, Loading = {...}, Window = {...} })
+----------------------------------------------------------------------
+function Library:Start(cfg)
+	cfg = cfg or {}
+	local w = cfg.Window or cfg
+	local t = w.Title or w[1] or "Vortex UI"
+	self.Folder = w.Folder or self.Folder
+	self.ConfigName = w.ConfigName or (tostring(t):gsub("[^%w%-_ ]", "_"))
+	self:_prepare({ Theme = w.Theme }, true)
+	if cfg.KeySystem then
+		local kc = cfg.KeySystem
+		if kc == true then kc = {} end
+		kc.Icon = kc.Icon or w.Icon
+		local ok = self:KeySystem(kc)
+		if not ok then return nil end
+	end
+	if cfg.Loading ~= false then
+		local lc = type(cfg.Loading) == "table" and cfg.Loading or {}
+		lc.Title = lc.Title or t
+		lc.Icon = lc.Icon or w.Icon
+		self:ShowLoading(lc)
+	end
+	return self:CreateWindow(w)
+end
+
 function Library:CreateWindow(config)
 	if type(config) == "string" then config = { Title = config } end
 	config = config or {}
@@ -1191,7 +1706,7 @@ function Library:CreateWindow(config)
 
 	local titleText = config.Title or config[1] or "Vortex UI"
 	local subtitleText = config.Subtitle or ("Universal | v" .. self.Version)
-	local iconId = config.Icon or ""
+	local iconId = config.Icon or "rbxassetid://75491720746957"
 	local closeAction = config.CloseAction or "Confirm"
 	self.Folder = config.Folder or self.Folder
 	self.ConfigName = config.ConfigName or (tostring(titleText):gsub("[^%w%-_ ]", "_"))
@@ -1239,6 +1754,7 @@ function Library:CreateWindow(config)
 	corner(Main, 10)
 	new("UISizeConstraint", { MinSize = Vector2.new(300, 300), Parent = Main })
 	local MainScale = new("UIScale", { Scale = 0.94, Parent = Main })
+	Window._scale, Window._shown = MainScale, true
 	local MainStroke = new("UIStroke", { Thickness = 1.2, Transparency = 0.25, Parent = Main })
 	local StrokeGrad = new("UIGradient", { Rotation = 35, Parent = MainStroke })
 	onTheme(Main, function()
@@ -1273,9 +1789,12 @@ function Library:CreateWindow(config)
 	local MaxBtn = ctl("□", 12, 2, "CardHover")
 	local CloseBtn = ctl("×", 16, 3, "Error")
 
-	local TopLine = new("Frame", { Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromOffset(0, 48), BorderSizePixel = 0, BackgroundTransparency = 0.35, Parent = Main })
+	local TopLine = new("Frame", { Size = UDim2.new(1, 0, 0, 2), Position = UDim2.fromOffset(0, 48), BorderSizePixel = 0, BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.35, ClipsDescendants = true, ZIndex = 5, Parent = Main })
 	local LineGrad = new("UIGradient", { Parent = TopLine })
 	onTheme(TopLine, function() LineGrad.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
+	local Shimmer = new("Frame", { Size = UDim2.new(0, 100, 1, 0), Position = UDim2.new(0, -100, 0, 0), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 6, Parent = TopLine })
+	new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.2), NumberSequenceKeypoint.new(1, 1) }), Parent = Shimmer })
+	TweenService:Create(Shimmer, TweenInfo.new(2.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, false, 1.4), { Position = UDim2.new(1, 0, 0, 0) }):Play()
 
 	-- SIDEBAR
 	local Sidebar = new("Frame", { Name = "Sidebar", Size = UDim2.new(0, 190, 1, -49), Position = UDim2.fromOffset(0, 49), BackgroundTransparency = 0.25, BorderSizePixel = 0, ClipsDescendants = true, Parent = Main }, { BackgroundColor3 = "Sidebar" })
@@ -1310,6 +1829,7 @@ function Library:CreateWindow(config)
 	local Dot = new("Frame", { Size = UDim2.fromOffset(9, 9), Position = UDim2.new(1, -9, 1, -9), BorderSizePixel = 0, Parent = AvatarBg }, { BackgroundColor3 = "Success" })
 	corner(Dot, 5)
 	new("UIStroke", { Thickness = 1.5, Transparency = 0.2, Parent = Dot }, { Color = "Card" })
+	TweenService:Create(Dot, TweenInfo.new(1.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { BackgroundTransparency = 0.6 }):Play()
 	task.spawn(function()
 		pcall(function()
 			Avatar.Image = Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
