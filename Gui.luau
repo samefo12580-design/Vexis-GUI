@@ -1,6 +1,4 @@
 --[[
-    VORTEX UI  v2.4  (glass style + loading screen)
-    ------------------------------------------------------------------
     local Library = loadstring(readfile("VortexUI_NoKey.lua"))()   -- or loadstring(game:HttpGet(URL))()
 
     local Window = Library:CreateWindow({ Title = "My Hub", Subtitle = "Universal", Theme = "red" })
@@ -47,7 +45,7 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "2.4.0",
+	Version = "1.0.0",
 	DefaultIcon = "", -- put your rbxassetid://... here once: used by the loading screen, window header and mobile button
 	Flags = {}, Elements = {}, Windows = {},
 	Themes = {}, ThemeOrder = {}, Theme = {}, ThemeName = "red",
