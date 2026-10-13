@@ -47,7 +47,7 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "1.0.0",
+	Version = "2.4.0",
 	DefaultIcon = "", -- put your rbxassetid://... here once: used by the loading screen, window header and mobile button
 	Flags = {}, Elements = {}, Windows = {},
 	Themes = {}, ThemeOrder = {}, Theme = {}, ThemeName = "red",
@@ -1359,9 +1359,12 @@ function WindowMT:SetVisible(v)
 		task.delay(0.34, function() if self._visTok == tok then self.Main.Visible = false end end)
 	end
 end
--- Show / hide animation: the window drops away (slides down, shrinks, accent edge flash, fades out)
--- and rises back in with a soft overshoot when shown again.
-local SLIDE = 36
+-- Show / hide animation.
+--   hide: the whole window (background + every control, scaled together) winds up slightly,
+--         then collapses into nothing while dropping a little; the edge flashes accent.
+--   show: pops back up from small with a soft overshoot while the content fades in.
+-- Nothing is faded separately from the background, so controls never float without their panel.
+local SLIDE = 24
 function WindowMT:_animate(show, scaleTo)
 	self._animTok = (self._animTok or 0) + 1
 	local tok = self._animTok
@@ -1370,35 +1373,27 @@ function WindowMT:_animate(show, scaleTo)
 		local rest = self._restPos or main.Position
 		self._restPos = nil
 		if not self._hiding then
-			-- fully hidden before: start slightly low and small
 			main.Position = UDim2.new(rest.X.Scale, rest.X.Offset, rest.Y.Scale, rest.Y.Offset + SLIDE)
-			sc.Scale = 0.9
+			sc.Scale = 0.6
+			cover.BackgroundTransparency = 0
 		end
 		self._hiding = false
 		main.BackgroundTransparency = 0.12
 		st.Thickness = 1.2
 		st.Transparency = 0.25
-		tween(cover, { BackgroundTransparency = 1 }, 0.28)
-		tween(main, { Position = rest }, 0.36, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-		tween(sc, { Scale = 1 }, 0.36, Enum.EasingStyle.Back)
-		task.delay(0.45, function() if self._animTok == tok and self._crisp then self._crisp() end end)
+		tween(cover, { BackgroundTransparency = 1 }, 0.3)
+		tween(main, { Position = rest }, 0.38, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+		tween(sc, { Scale = 1 }, 0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+		task.delay(0.46, function() if self._animTok == tok and self._crisp then self._crisp() end end)
 	else
 		local rest = self._restPos or main.Position
 		self._restPos = rest
 		self._hiding = true
-		-- accent edge flash, then the content is covered while the window drops away
-		st.Thickness = 1.2
-		tween(st, { Thickness = 3, Transparency = 0 }, 0.12)
-		tween(cover, { BackgroundTransparency = 0 }, 0.14)
-		tween(main, { Position = UDim2.new(rest.X.Scale, rest.X.Offset, rest.Y.Scale, rest.Y.Offset + SLIDE) }, 0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-		tween(sc, { Scale = scaleTo or 0.88 }, 0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-		task.delay(0.14, function()
-			if self._animTok ~= tok then return end
-			tween(cover, { BackgroundTransparency = 1 }, 0.16)
-			tween(main, { BackgroundTransparency = 1 }, 0.16)
-			tween(st, { Transparency = 1, Thickness = 1.2 }, 0.16)
-		end)
-		task.delay(0.31, function()
+		tween(cover, { BackgroundTransparency = 1 }, 0.08)
+		tween(st, { Thickness = 2.2, Transparency = 0 }, 0.12)
+		tween(main, { Position = UDim2.new(rest.X.Scale, rest.X.Offset, rest.Y.Scale, rest.Y.Offset + SLIDE) }, 0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+		tween(sc, { Scale = scaleTo or 0.01 }, 0.32, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+		task.delay(0.33, function()
 			if self._animTok ~= tok then return end
 			main.Position = rest
 			self._restPos = nil
@@ -1419,7 +1414,7 @@ function WindowMT:ResetLayout() self._resetLayout() end
 function WindowMT:Destroy()
 	if self._dying then return end
 	self._dying = true
-	self:_animate(false, 0.88)
+	self:_animate(false)
 	task.delay(0.34, function()
 		for i, w in ipairs(Library.Windows) do if w == self then table.remove(Library.Windows, i) break end end
 		for i, g in ipairs(Library._guis) do if g == self.ScreenGui then table.remove(Library._guis, i) break end end
