@@ -29,7 +29,7 @@
     Tab:CreateGroupbox(title)                             -- has the same methods as Tab
     Tab:CreateThemePicker() / Tab:CreateToggleMenuKeybind() / Tab:CreateCFrameCopier()
 
-    Library:Notify(title, text, duration)
+    Library:Notify(title, text, duration [, "success" | "error" | "warning"])
     Library:SetTheme("ocean") / Library:SetAccent(Color3) / Library.Flags.myFlag
     Library:SaveConfig() / :LoadConfig() / :ResetConfig() / :Unload()
 
@@ -423,9 +423,14 @@ end
 ----------------------------------------------------------------------
 -- Notify / Tooltip / CFrame
 ----------------------------------------------------------------------
-function Library:Notify(title, text, duration)
+function Library:Notify(title, text, duration, kind)
 	if not NotifHolder then return end
 	duration = tonumber(duration) or 3
+	local kcol = ({ success = Theme.Success, error = Theme.Error, warning = Color3.fromRGB(240, 180, 70), warn = Color3.fromRGB(240, 180, 70) })[tostring(kind or ""):lower()]
+	local function tint(f)
+		if kcol then f:SetAttribute("Bind_BackgroundColor3", nil); f.BackgroundColor3 = kcol end
+		return f
+	end
 	local wrap = new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = NotifHolder })
 	local card = new("Frame", {
 		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Position = UDim2.new(1.2, 0, 0, 0),
@@ -433,7 +438,7 @@ function Library:Notify(title, text, duration)
 	}, { BackgroundColor3 = "Card" })
 	corner(card, 8)
 	stroke(card, "Stroke", 0.35)
-	new("Frame", { Size = UDim2.new(0, 3, 1, 0), BorderSizePixel = 0, Parent = card }, { BackgroundColor3 = "Accent" })
+	tint(new("Frame", { Size = UDim2.new(0, 3, 1, 0), BorderSizePixel = 0, Parent = card }, { BackgroundColor3 = "Accent" }))
 	local body = new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = card })
 	pad(body, 14, 9, 12, 12)
 	list(body, 2)
@@ -442,7 +447,7 @@ function Library:Notify(title, text, duration)
 		Text = tostring(text or ""), TextSize = 11, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top,
 		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 2,
 	}, "SubText")
-	local bar = new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 2), BorderSizePixel = 0, Parent = card }, { BackgroundColor3 = "Accent" })
+	local bar = tint(new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 2), BorderSizePixel = 0, Parent = card }, { BackgroundColor3 = "Accent" }))
 	tween(card, { Position = UDim2.new(0, 0, 0, 0) }, 0.3, Enum.EasingStyle.Back)
 	tween(bar, { Size = UDim2.new(0, 0, 0, 2) }, duration, Enum.EasingStyle.Linear)
 	task.delay(duration, function()
@@ -513,6 +518,7 @@ function Library:Unload()
 	for k in pairs(self.Flags) do self.Flags[k] = nil end
 	for k in pairs(self.Elements) do self.Elements[k] = nil end
 	self._inited, self._listening = false, false
+	self._openDD = nil
 	NotifHolder, TooltipFrame, TooltipLabel, activeDrag, activeEnd = nil, nil, nil, nil, nil
 end
 
@@ -798,6 +804,13 @@ local function newDropdownUI(tab, text, multi)
 
 	function ui.setOpen(state)
 		ui.open = state and true or false
+		if ui.open then
+			local o = Library._openDD
+			if o and o ~= ui and o.open then o.setOpen(false) end
+			Library._openDD = ui
+		elseif Library._openDD == ui then
+			Library._openDD = nil
+		end
 		if not ui.open then search.Text = "" end
 		setBind(cardStroke, "Color", ui.open and "Accent" or "Stroke", true)
 		tween(cardStroke, { Transparency = ui.open and 0.25 or 0.4 }, 0.15)
@@ -1372,6 +1385,7 @@ end
 
 function WindowMT:SelectTab(tab)
 	if self.ActiveTab == tab then return end
+	if Library._openDD and Library._openDD.open then Library._openDD.setOpen(false) end
 	for _, t in ipairs(self.Tabs) do
 		t.MainPage.Visible = false
 		tween(t.Button, { BackgroundTransparency = 1 }, 0.15)
@@ -1559,67 +1573,71 @@ end
 --   Manual mode: local L = Library:ShowLoading({ Manual = true })
 --                 L:Set(0.4, "Loading modules")  ...  L:Finish()
 ----------------------------------------------------------------------
+local DEFAULT_ICON = "rbxassetid://75491720746957"
+local function normIcon(x)
+	if type(x) == "number" then return "rbxassetid://" .. x end
+	if type(x) == "string" and x ~= "" then
+		if x:match("^%d+$") then return "rbxassetid://" .. x end
+		return x
+	end
+	return DEFAULT_ICON
+end
+
 function Library:ShowLoading(cfg)
 	cfg = cfg or {}
 	self:_prepare(cfg, false)
 	local gui = newGui("VortexLoader")
 	local dim = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(4, 3, 3), BackgroundTransparency = 1, BorderSizePixel = 0, Parent = gui })
 	tween(dim, { BackgroundTransparency = cfg.Dim or 0.25 }, 0.4)
-	local card, scale, flash = glassCard(gui, 340, 226)
+	local card, scale, flash = glassCard(gui, 360, 232)
+	local white = Color3.new(1, 1, 1)
+	local center = Vector2.new(0.5, 0.5)
 
 	local function loop(inst, props, t, style, dir, reverse)
-		TweenService:Create(inst, TweenInfo.new(t, style or Enum.EasingStyle.Linear, dir or Enum.EasingDirection.Out, -1, reverse or false), props):Play()
+		local tw = TweenService:Create(inst, TweenInfo.new(t, style or Enum.EasingStyle.Linear, dir or Enum.EasingDirection.Out, -1, reverse or false), props)
+		tw:Play()
+		return tw
 	end
 
 	-- Accent line on top of the card
-	local topBar = new("Frame", { Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Parent = card })
+	local topBar = new("Frame", { Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = white, BorderSizePixel = 0, Parent = card })
 	local tg = new("UIGradient", { Parent = topBar })
 	onTheme(topBar, function() tg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
 
-	local CY = 62
-	local center = Vector2.new(0.5, 0.5)
-	-- Breathing glow behind the logo
-	local glow = new("Frame", { AnchorPoint = center, Position = UDim2.new(0.5, 0, 0, CY), Size = UDim2.fromOffset(84, 84), BackgroundTransparency = 0.85, BorderSizePixel = 0, Parent = card }, { BackgroundColor3 = "Accent" })
-	corner(glow, 60)
-	loop(glow, { Size = UDim2.fromOffset(108, 108), BackgroundTransparency = 0.96 }, 1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, true)
+	-- Header: logo badge with a single spinning ring (left) + title / subtitle (right)
+	local BX, BY = 48, 54
+	local glow = new("Frame", { AnchorPoint = center, Position = UDim2.fromOffset(BX, BY), Size = UDim2.fromOffset(64, 64), BackgroundTransparency = 0.85, BorderSizePixel = 0, Parent = card }, { BackgroundColor3 = "Accent" })
+	corner(glow, 100)
+	loop(glow, { Size = UDim2.fromOffset(84, 84), BackgroundTransparency = 0.96 }, 1.3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, true)
 
-	-- Two counter-rotating rings
-	local function makeRing(size, thick, rot, secs, flip)
-		local r = new("Frame", { AnchorPoint = center, Position = UDim2.new(0.5, 0, 0, CY), Size = UDim2.fromOffset(size, size), BackgroundTransparency = 1, Parent = card })
-		corner(r, size)
-		local s = new("UIStroke", { Thickness = thick, Color = Color3.new(1, 1, 1), Parent = r })
-		local g = new("UIGradient", {
-			Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.65, 0.35), NumberSequenceKeypoint.new(1, 1) }),
-			Parent = s,
-		})
-		onTheme(r, function() g.Color = flip and ColorSequence.new(Theme.Accent2, Theme.Accent) or ColorSequence.new(Theme.Accent, Theme.Accent2) end)
-		loop(r, { Rotation = rot }, secs)
-	end
-	makeRing(70, 3, 360, 1.1, false)
-	makeRing(56, 2, -360, 1.8, true)
+	local ringBase = new("Frame", { AnchorPoint = center, Position = UDim2.fromOffset(BX, BY), Size = UDim2.fromOffset(62, 62), BackgroundTransparency = 1, Parent = card })
+	corner(ringBase, 100)
+	stroke(ringBase, "Stroke", 0.3).Thickness = 3
 
-	-- Three orbiting dots
-	local orbit = new("Frame", { AnchorPoint = center, Position = UDim2.new(0.5, 0, 0, CY), Size = UDim2.fromOffset(98, 98), BackgroundTransparency = 1, Parent = card })
-	for i = 0, 2 do
-		local a = i * math.pi * 2 / 3
-		local d = new("Frame", {
-			Size = UDim2.fromOffset(6, 6), Position = UDim2.new(0.5, -3 + 49 * math.cos(a), 0.5, -3 + 49 * math.sin(a)),
-			BackgroundTransparency = i * 0.25, BorderSizePixel = 0, Parent = orbit,
-		}, { BackgroundColor3 = "Accent2" })
-		corner(d, 3)
-	end
-	loop(orbit, { Rotation = 360 }, 2.6)
+	local ring = new("Frame", { AnchorPoint = center, Position = UDim2.fromOffset(BX, BY), Size = UDim2.fromOffset(62, 62), BackgroundTransparency = 1, Parent = card })
+	corner(ring, 100)
+	local ringStroke = new("UIStroke", { Thickness = 3, Color = white, Parent = ring })
+	local rg = new("UIGradient", {
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.6, 0.45), NumberSequenceKeypoint.new(1, 1) }),
+		Parent = ringStroke,
+	})
+	onTheme(ring, function() rg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
+	local ringTw = loop(ring, { Rotation = 360 }, 1.2)
 
+	local badge = new("Frame", { AnchorPoint = center, Position = UDim2.fromOffset(BX, BY), Size = UDim2.fromOffset(44, 44), BackgroundTransparency = 0.2, BorderSizePixel = 0, Parent = card }, { BackgroundColor3 = "AccentSoft" })
+	corner(badge, 12)
+	local badgeStroke = stroke(badge, "Accent", 0.6)
+	local badgeScale = new("UIScale", { Parent = badge })
 	local logo = new("ImageLabel", {
-		Image = cfg.Icon or "rbxassetid://75491720746957", BackgroundTransparency = 1, AnchorPoint = center,
-		Position = UDim2.new(0.5, 0, 0, CY), Size = UDim2.fromOffset(32, 32), ScaleType = Enum.ScaleType.Fit, Parent = card,
+		Image = normIcon(cfg.Icon), BackgroundTransparency = 1, AnchorPoint = center, Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(28, 28), ScaleType = Enum.ScaleType.Fit, Parent = badge,
 	})
 	corner(logo, 6)
-	loop(logo, { Size = UDim2.fromOffset(38, 38) }, 0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, true)
+	loop(logo, { Size = UDim2.fromOffset(32, 32) }, 0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, true)
 
 	-- Typewriter title
 	local fullTitle = tostring(cfg.Title or "Loading")
-	local titleLbl = label(card, { Text = "", Font = Enum.Font.GothamBold, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 112), Size = UDim2.new(1, 0, 0, 22) }, "Text")
+	local titleLbl = label(card, { Text = "", Font = Enum.Font.GothamBold, TextSize = 17, Position = UDim2.fromOffset(88, 30), Size = UDim2.new(1, -108, 0, 22), TextTruncate = Enum.TextTruncate.AtEnd }, "Text")
 	task.spawn(function()
 		local n = utf8.len(fullTitle)
 		if not n then titleLbl.Text = fullTitle return end
@@ -1629,44 +1647,96 @@ function Library:ShowLoading(cfg)
 			task.wait(0.045)
 		end
 	end)
-	local stepLbl = label(card, { Text = cfg.Subtitle or "", TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 138), Size = UDim2.new(1, 0, 0, 16) }, "SubText")
+	label(card, { Text = tostring(cfg.Subtitle or "Starting up"), TextSize = 11, Position = UDim2.fromOffset(88, 54), Size = UDim2.new(1, -108, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd }, "SubText")
 
-	-- Progress bar with a moving shine
-	local track = new("Frame", { Size = UDim2.new(1, -56, 0, 6), Position = UDim2.fromOffset(28, 170), BackgroundTransparency = 0.2, Parent = card }, { BackgroundColor3 = "Input" })
+	new("Frame", { Position = UDim2.fromOffset(22, 96), Size = UDim2.new(1, -44, 0, 1), BorderSizePixel = 0, BackgroundTransparency = 0.5, Parent = card }, { BackgroundColor3 = "Stroke" })
+
+	-- Step log: newest step at the bottom with a spinner, finished steps get a check mark and fade upward
+	local ROWH = 18
+	local logArea = new("Frame", { Position = UDim2.fromOffset(22, 106), Size = UDim2.new(1, -44, 0, ROWH * 3), BackgroundTransparency = 1, ClipsDescendants = true, Parent = card })
+	local rows = {}
+	local function styleRow(r, age)
+		local lt = age == 0 and 0 or (age == 1 and 0.45 or 0.75)
+		tween(r.frame, { Position = UDim2.fromOffset(0, (2 - age) * ROWH) }, 0.25, Enum.EasingStyle.Quint)
+		tween(r.lbl, { TextTransparency = lt }, 0.25)
+	end
+	local function settle(r)
+		if r.settled then return end
+		r.settled = true
+		if r.spinTw then r.spinTw:Cancel() end
+		r.spin.Visible = false
+		r.check.Visible = true
+	end
+	local function pushRow(text)
+		local r = {}
+		r.frame = new("Frame", { Size = UDim2.new(1, 0, 0, ROWH), Position = UDim2.fromOffset(0, ROWH * 3), BackgroundTransparency = 1, Parent = logArea })
+		r.spin = new("Frame", { Size = UDim2.fromOffset(10, 10), Position = UDim2.fromOffset(1, 4), BackgroundTransparency = 1, Parent = r.frame })
+		corner(r.spin, 100)
+		local ss = new("UIStroke", { Thickness = 2, Color = white, Parent = r.spin })
+		local sg = new("UIGradient", {
+			Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.7, 0.5), NumberSequenceKeypoint.new(1, 1) }),
+			Parent = ss,
+		})
+		onTheme(r.spin, function() sg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
+		r.spinTw = loop(r.spin, { Rotation = 360 }, 0.7)
+		r.check = makeCheck(r.frame, UDim2.fromOffset(0, 3), "Accent")
+		r.lbl = label(r.frame, { Text = tostring(text), TextSize = 12, Position = UDim2.fromOffset(20, 0), Size = UDim2.new(1, -20, 1, 0), TextTransparency = 1, TextTruncate = Enum.TextTruncate.AtEnd }, "Text")
+		table.insert(rows, 1, r)
+		while #rows > 3 do
+			local old = table.remove(rows)
+			tween(old.lbl, { TextTransparency = 1 }, 0.2)
+			tween(old.frame, { Position = UDim2.fromOffset(0, -ROWH) }, 0.25)
+			task.delay(0.3, function() old.frame:Destroy() end)
+		end
+		for i, rr in ipairs(rows) do
+			if i > 1 then settle(rr) end
+			styleRow(rr, i - 1)
+		end
+	end
+
+	-- Progress
+	label(card, { Text = "LOADING", Font = Enum.Font.GothamBold, TextSize = 9, Position = UDim2.fromOffset(22, 168), Size = UDim2.fromOffset(100, 14) }, "SubText")
+	local pct = label(card, { Text = "0%", Font = Enum.Font.GothamBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Right, Position = UDim2.fromOffset(22, 166), Size = UDim2.new(1, -44, 0, 16) }, "Accent")
+	local track = new("Frame", { Size = UDim2.new(1, -44, 0, 6), Position = UDim2.fromOffset(22, 186), BackgroundTransparency = 0.2, Parent = card }, { BackgroundColor3 = "Input" })
 	corner(track, 3)
-	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0, BackgroundColor3 = Color3.new(1, 1, 1), ClipsDescendants = true, Parent = track })
+	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0, BackgroundColor3 = white, ClipsDescendants = true, Parent = track })
 	corner(fill, 3)
 	local fg = new("UIGradient", { Parent = fill })
 	onTheme(fill, function() fg.Color = ColorSequence.new(Theme.Accent, Theme.Accent2) end)
-	local shine = new("Frame", { Size = UDim2.new(0, 34, 1, 0), Position = UDim2.new(-0.4, 0, 0, 0), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Parent = fill })
+	local shine = new("Frame", { Size = UDim2.new(0, 34, 1, 0), Position = UDim2.new(-0.4, 0, 0, 0), BackgroundColor3 = white, BorderSizePixel = 0, Parent = fill })
 	new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.35), NumberSequenceKeypoint.new(1, 1) }), Parent = shine })
 	loop(shine, { Position = UDim2.new(1.2, 0, 0, 0) }, 1, Enum.EasingStyle.Quad)
-	local pct = label(card, { Text = "0%", Font = Enum.Font.GothamMedium, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 182), Size = UDim2.new(1, 0, 0, 14) }, "Text")
-	label(card, { Text = cfg.Footer or ("Vortex UI  v" .. Library.Version), TextSize = 9, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 204), Size = UDim2.new(1, 0, 0, 14) }, "SubText")
+	label(card, { Text = cfg.Footer or ("Vortex UI  v" .. Library.Version), TextSize = 9, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 208), Size = UDim2.new(1, 0, 0, 14) }, "SubText")
 
-	local ctrl, done = {}, false
-	local function setStep(text)
-		if text == nil or stepLbl.Text == text then return end
-		tween(stepLbl, { TextTransparency = 1 }, 0.1)
-		task.delay(0.1, function()
-			if not stepLbl.Parent then return end
-			stepLbl.Text = text
-			tween(stepLbl, { TextTransparency = 0 }, 0.18)
-		end)
-	end
+	local pctNum = Instance.new("NumberValue")
+	pctNum.Changed:Connect(function(v) pct.Text = math.floor(v * 100 + 0.5) .. "%" end)
+
+	local ctrl, done, lastText = {}, false, nil
 	function ctrl:Set(p, text)
 		if done then return end
 		p = math.clamp(tonumber(p) or 0, 0, 1)
 		tween(fill, { Size = UDim2.fromScale(p, 1) }, 0.3, Enum.EasingStyle.Quad)
-		pct.Text = math.floor(p * 100 + 0.5) .. "%"
-		setStep(text)
+		tween(pctNum, { Value = p }, 0.3, Enum.EasingStyle.Quad)
+		if text ~= nil and text ~= lastText then
+			lastText = text
+			pushRow(text)
+		end
 	end
 	function ctrl:Finish(text)
 		if done then return end
 		ctrl:Set(1, text or cfg.DoneText or "Ready")
 		done = true
+		for _, r in ipairs(rows) do settle(r) end
+		if rows[1] then setBind(rows[1].lbl, "TextColor3", "Success", true) end
+		ringTw:Cancel()
+		tween(ringStroke, { Transparency = 1 }, 0.2)
+		fg.Color = ColorSequence.new(Theme.Success)
 		flash(Theme.Success)
-		task.wait(0.55)
+		setBind(badgeStroke, "Color", "Success", true)
+		tween(badgeStroke, { Transparency = 0.15 }, 0.2)
+		tween(badgeScale, { Scale = 1.12 }, 0.12)
+		task.delay(0.12, function() tween(badgeScale, { Scale = 1 }, 0.2, Enum.EasingStyle.Back) end)
+		task.wait(0.6)
 		tween(card, { GroupTransparency = 1 }, 0.3)
 		tween(scale, { Scale = 1.08 }, 0.3)
 		tween(dim, { BackgroundTransparency = 1 }, 0.3)
@@ -1708,7 +1778,7 @@ function Library:CreateWindow(config)
 
 	local titleText = config.Title or config[1] or "Vortex UI"
 	local subtitleText = config.Subtitle or ("Universal | v" .. self.Version)
-	local iconId = config.Icon or ""
+	local iconId = normIcon(config.Icon)
 	local closeAction = config.CloseAction or "Confirm"
 	self.Folder = config.Folder or self.Folder
 	self.ConfigName = config.ConfigName or (tostring(titleText):gsub("[^%w%-_ ]", "_"))
@@ -1868,7 +1938,8 @@ function Library:CreateWindow(config)
 		for _, bar in ipairs(BurgerBars) do setBind(bar, "BackgroundColor3", "SubText", true) end
 	end)
 	Library:AddTooltip(CollapseBtn, "Collapse / expand menu")
-	Window._collapsed = config.SidebarCollapsed == true
+	local savedSb = Library._config["ui.sidebar"]
+	Window._collapsed = savedSb == nil and config.SidebarCollapsed == true or savedSb == true
 
 	local TabList = new("ScrollingFrame", {
 		Size = UDim2.new(1, -20, 1, -118), Position = UDim2.fromOffset(10, 50), BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -1955,6 +2026,8 @@ function Library:CreateWindow(config)
 	-- collapse / expand with a smooth width animation
 	function Window:SetSidebarCollapsed(state)
 		self._collapsed = state and true or false
+		Library._config["ui.sidebar"] = self._collapsed
+		Library:_queueSave()
 		local compact = targetCompact()
 		layoutStatic(compact)
 		if sbTween then sbTween:Cancel() end
