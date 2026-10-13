@@ -48,6 +48,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local Library = {
 	Version = "2.4.0",
+	DefaultIcon = "", -- put your rbxassetid://... here once: used by the loading screen, window header and mobile button
 	Flags = {}, Elements = {}, Windows = {},
 	Themes = {}, ThemeOrder = {}, Theme = {}, ThemeName = "red",
 	Folder = "VortexUI", ConfigName = "main",
@@ -1350,14 +1351,34 @@ function WindowMT:SetVisible(v)
 	local tok = self._visTok
 	if v then
 		self.Main.Visible = true
-		tween(self.Main, { GroupTransparency = 0 }, 0.22)
-		tween(self._scale, { Scale = 1 }, 0.28, Enum.EasingStyle.Back)
+		self:_animate(true)
 	else
 		self.Modal.Visible = false
 		if self._hideTeam then self._hideTeam() end
-		tween(self.Main, { GroupTransparency = 1 }, 0.16)
-		tween(self._scale, { Scale = 0.94 }, 0.16)
-		task.delay(0.17, function() if self._visTok == tok then self.Main.Visible = false end end)
+		self:_animate(false, 0.94)
+		task.delay(0.22, function() if self._visTok == tok then self.Main.Visible = false end end)
+	end
+end
+-- Show / hide animation (cover fade + scale)
+function WindowMT:_animate(show, scaleTo)
+	self._animTok = (self._animTok or 0) + 1
+	local tok = self._animTok
+	local cover, main, st = self._cover, self.Main, self._mainStroke
+	if show then
+		main.BackgroundTransparency = 0.12
+		st.Transparency = 0.25
+		tween(cover, { BackgroundTransparency = 1 }, 0.25)
+		tween(self._scale, { Scale = 1 }, 0.3, Enum.EasingStyle.Back)
+		task.delay(0.4, function() if self._animTok == tok and self._crisp then self._crisp() end end)
+	else
+		tween(cover, { BackgroundTransparency = 0 }, 0.1)
+		tween(self._scale, { Scale = scaleTo or 0.94 }, 0.2)
+		task.delay(0.1, function()
+			if self._animTok ~= tok then return end
+			tween(cover, { BackgroundTransparency = 1 }, 0.1)
+			tween(main, { BackgroundTransparency = 1 }, 0.1)
+			tween(st, { Transparency = 1 }, 0.1)
+		end)
 	end
 end
 function WindowMT:Toggle() self:SetVisible(not self._shown) end
@@ -1373,8 +1394,7 @@ function WindowMT:ResetLayout() self._resetLayout() end
 function WindowMT:Destroy()
 	if self._dying then return end
 	self._dying = true
-	tween(self.Main, { GroupTransparency = 1 }, 0.22)
-	tween(self._scale, { Scale = 0.9 }, 0.22)
+	self:_animate(false, 0.9)
 	task.delay(0.24, function()
 		for i, w in ipairs(Library.Windows) do if w == self then table.remove(Library.Windows, i) break end end
 		for i, g in ipairs(Library._guis) do if g == self.ScreenGui then table.remove(Library._guis, i) break end end
@@ -1573,14 +1593,13 @@ end
 --   Manual mode: local L = Library:ShowLoading({ Manual = true })
 --                 L:Set(0.4, "Loading modules")  ...  L:Finish()
 ----------------------------------------------------------------------
-local DEFAULT_ICON = "rbxassetid://75491720746957"
 local function normIcon(x)
 	if type(x) == "number" then return "rbxassetid://" .. x end
 	if type(x) == "string" and x ~= "" then
 		if x:match("^%d+$") then return "rbxassetid://" .. x end
 		return x
 	end
-	return DEFAULT_ICON
+	return Library.DefaultIcon or ""
 end
 
 function Library:ShowLoading(cfg)
@@ -1633,6 +1652,7 @@ function Library:ShowLoading(cfg)
 		Size = UDim2.fromOffset(28, 28), ScaleType = Enum.ScaleType.Fit, Parent = badge,
 	})
 	corner(logo, 6)
+	logo.Visible = logo.Image ~= ""
 	loop(logo, { Size = UDim2.fromOffset(32, 32) }, 0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, true)
 
 	-- Typewriter title
@@ -1825,9 +1845,9 @@ function Library:CreateWindow(config)
 	local W = math.clamp(want.X.Offset, 300, math.max(300, vp.X * 0.94))
 	local H = math.clamp(want.Y.Offset, 300, math.max(300, vp.Y * 0.92))
 
-	local Main = new("CanvasGroup", {
+	local Main = new("Frame", {
 		Name = "MainFrame", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(W, H), Position = UDim2.fromScale(0.5, 0.5),
-		BackgroundTransparency = 0.12, BorderSizePixel = 0, ClipsDescendants = true, GroupTransparency = 1, Parent = ScreenGui,
+		BackgroundTransparency = 0.12, BorderSizePixel = 0, ClipsDescendants = true, Parent = ScreenGui,
 	}, { BackgroundColor3 = "Background" })
 	corner(Main, 10)
 	new("UISizeConstraint", { MinSize = Vector2.new(300, 300), Parent = Main })
@@ -1841,6 +1861,11 @@ function Library:CreateWindow(config)
 		})
 	end)
 	Window.Main = Main
+	Window._mainStroke = MainStroke
+	-- Fade cover: a plain Frame is used instead of a CanvasGroup (CanvasGroups render to a texture and get blurry when big)
+	local Cover = new("Frame", { Name = "Cover", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 0, BorderSizePixel = 0, ZIndex = 1000, Parent = Main }, { BackgroundColor3 = "Background" })
+	corner(Cover, 10)
+	Window._cover = Cover
 
 	-- TOP BAR
 	local TopBar = new("Frame", { Name = "TopBar", Size = UDim2.new(1, 0, 0, 48), BackgroundTransparency = 1, ZIndex = 10, Parent = Main })
@@ -2043,6 +2068,7 @@ function Library:CreateWindow(config)
 	-- Exit confirmation (follows the selected team color)
 	local Modal = new("TextButton", { Name = "Modal", Text = "", AutoButtonColor = false, Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(5, 3, 3), BackgroundTransparency = 1, Visible = false, ZIndex = 100, Parent = Main })
 	Window.Modal = Modal
+	corner(Modal, 10)
 	local MCard = new("CanvasGroup", { Size = UDim2.fromOffset(290, 156), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 0.04, GroupTransparency = 1, BorderSizePixel = 0, ZIndex = 101, Parent = Modal }, { BackgroundColor3 = "Background" })
 	corner(MCard, 10)
 	stroke(MCard, "Accent", 0.4)
@@ -2178,6 +2204,16 @@ function Library:CreateWindow(config)
 			end)
 		end
 	end
+	local function crisp()
+		if not Main.Parent or Window._scale.Scale ~= 1 then return end
+		local ap = Main.AbsolutePosition
+		local dx, dy = math.floor(ap.X + 0.5) - ap.X, math.floor(ap.Y + 0.5) - ap.Y
+		if math.abs(dx) > 0.01 or math.abs(dy) > 0.01 then
+			local p = Main.Position
+			Main.Position = UDim2.new(p.X.Scale, p.X.Offset + dx, p.Y.Scale, p.Y.Offset + dy)
+		end
+	end
+	Window._crisp = crisp
 	local function setMax(state)
 		if isMin then setMin(false) return end
 		isMax = state
@@ -2186,9 +2222,9 @@ function Library:CreateWindow(config)
 		if state then
 			preMax = { Size = Main.Size, Pos = Main.Position }
 			local v = viewport()
-			tween(Main, { Size = UDim2.fromOffset(v.X - 24, v.Y - 24), Position = UDim2.fromScale(0.5, 0.5) })
+			tween(Main, { Size = UDim2.fromOffset(math.floor(v.X) - 24, math.floor(v.Y) - 24), Position = UDim2.fromScale(0.5, 0.5) }).Completed:Connect(crisp)
 		elseif preMax then
-			tween(Main, { Size = preMax.Size, Position = preMax.Pos })
+			tween(Main, { Size = preMax.Size, Position = preMax.Pos }).Completed:Connect(crisp)
 		end
 	end
 	Window._setMin, Window._setMax = setMin, setMax
@@ -2222,18 +2258,18 @@ function Library:CreateWindow(config)
 		startDrag(function(i)
 			local d = i.Position - startMouse
 			Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-		end)
+		end, crisp)
 	end)
 	Grip.InputBegan:Connect(function(input)
 		if not isPress(input) or isMin or isMax then return end
 		local startMouse, startSize, startPos = input.Position, Vector2.new(Main.Size.X.Offset, Main.Size.Y.Offset), Main.Position
 		startDrag(function(i)
 			local d, v = i.Position - startMouse, viewport()
-			local nw = math.clamp(startSize.X + d.X, 300, v.X - 8)
-			local nh = math.clamp(startSize.Y + d.Y, 300, v.Y - 8)
+			local nw = math.floor(math.clamp(startSize.X + d.X, 300, v.X - 8))
+			local nh = math.floor(math.clamp(startSize.Y + d.Y, 300, v.Y - 8))
 			Main.Size = UDim2.fromOffset(nw, nh)
 			Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + (nw - startSize.X) / 2, startPos.Y.Scale, startPos.Y.Offset + (nh - startSize.Y) / 2)
-		end)
+		end, crisp)
 	end)
 
 	-- Keyboard toggle key + floating button for mobile
@@ -2242,13 +2278,45 @@ function Library:CreateWindow(config)
 		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Window.ToggleKey then Window:Toggle() end
 	end)
 	if config.MobileButton ~= false and UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+		local FS = 44
+		local function clampFab(x, y)
+			local v = viewport()
+			return math.clamp(x, 6, math.max(6, v.X - FS - 6)), math.clamp(y, 6, math.max(6, v.Y - FS - 6))
+		end
+		local v0 = viewport()
+		local sx, sy = tonumber(Library._config["ui.fabx"]), tonumber(Library._config["ui.faby"])
+		local ix, iy = clampFab(sx and sx * v0.X or 12, sy and sy * v0.Y or (v0.Y / 2 - FS / 2))
 		local fab = new("ImageButton", {
-			Size = UDim2.fromOffset(44, 44), Position = UDim2.new(0, 12, 0.5, -22), BackgroundTransparency = 0.15,
+			Size = UDim2.fromOffset(FS, FS), Position = UDim2.fromOffset(ix, iy), BackgroundTransparency = 0.15,
 			Image = iconId, AutoButtonColor = false, ZIndex = 60, Parent = ScreenGui,
 		}, { BackgroundColor3 = "Card" })
-		corner(fab, 22)
+		corner(fab, FS / 2)
 		stroke(fab, "Accent", 0.2)
-		fab.MouseButton1Click:Connect(function() Window:Toggle() end)
+		-- tap = open / close, drag = move (snaps to the nearest screen edge and remembers the spot)
+		fab.InputBegan:Connect(function(input)
+			if not isPress(input) then return end
+			local startIn, startPos, moved = input.Position, fab.AbsolutePosition, false
+			startDrag(function(i)
+				local d = i.Position - startIn
+				if not moved then
+					if d.Magnitude < 8 then return end
+					moved = true
+					tween(fab, { BackgroundTransparency = 0 }, 0.1)
+				end
+				local x, y = clampFab(startPos.X + d.X, startPos.Y + d.Y)
+				fab.Position = UDim2.fromOffset(x, y)
+			end, function()
+				if not moved then Window:Toggle() return end
+				local v = viewport()
+				local ap = fab.AbsolutePosition
+				local tx = (ap.X + FS / 2 < v.X / 2) and 8 or (v.X - FS - 8)
+				local x, y = clampFab(tx, ap.Y)
+				tween(fab, { Position = UDim2.fromOffset(x, y), BackgroundTransparency = 0.15 }, 0.25, Enum.EasingStyle.Quint)
+				Library._config["ui.fabx"] = x / v.X
+				Library._config["ui.faby"] = y / v.Y
+				Library:_queueSave()
+			end)
+		end)
 	end
 
 	applyLayout()
@@ -2261,8 +2329,7 @@ function Library:CreateWindow(config)
 	end)
 
 	-- Open animation
-	tween(Main, { GroupTransparency = 0 }, 0.25)
-	tween(MainScale, { Scale = 1 }, 0.3, Enum.EasingStyle.Back)
+	Window:_animate(true)
 
 	return Window
 end
