@@ -1,4 +1,6 @@
 --[[
+    VORTEX UI  v2.4  (glass style + loading screen)
+    ------------------------------------------------------------------
     local Library = loadstring(readfile("VortexUI_NoKey.lua"))()   -- or loadstring(game:HttpGet(URL))()
 
     local Window = Library:CreateWindow({ Title = "My Hub", Subtitle = "Universal", Theme = "red" })
@@ -1353,29 +1355,54 @@ function WindowMT:SetVisible(v)
 	else
 		self.Modal.Visible = false
 		if self._hideTeam then self._hideTeam() end
-		self:_animate(false, 0.94)
-		task.delay(0.22, function() if self._visTok == tok then self.Main.Visible = false end end)
+		self:_animate(false)
+		task.delay(0.34, function() if self._visTok == tok then self.Main.Visible = false end end)
 	end
 end
--- Show / hide animation (cover fade + scale)
+-- Show / hide animation: the window drops away (slides down, shrinks, accent edge flash, fades out)
+-- and rises back in with a soft overshoot when shown again.
+local SLIDE = 36
 function WindowMT:_animate(show, scaleTo)
 	self._animTok = (self._animTok or 0) + 1
 	local tok = self._animTok
-	local cover, main, st = self._cover, self.Main, self._mainStroke
+	local cover, main, st, sc = self._cover, self.Main, self._mainStroke, self._scale
 	if show then
+		local rest = self._restPos or main.Position
+		self._restPos = nil
+		if not self._hiding then
+			-- fully hidden before: start slightly low and small
+			main.Position = UDim2.new(rest.X.Scale, rest.X.Offset, rest.Y.Scale, rest.Y.Offset + SLIDE)
+			sc.Scale = 0.9
+		end
+		self._hiding = false
 		main.BackgroundTransparency = 0.12
+		st.Thickness = 1.2
 		st.Transparency = 0.25
-		tween(cover, { BackgroundTransparency = 1 }, 0.25)
-		tween(self._scale, { Scale = 1 }, 0.3, Enum.EasingStyle.Back)
-		task.delay(0.4, function() if self._animTok == tok and self._crisp then self._crisp() end end)
+		tween(cover, { BackgroundTransparency = 1 }, 0.28)
+		tween(main, { Position = rest }, 0.36, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+		tween(sc, { Scale = 1 }, 0.36, Enum.EasingStyle.Back)
+		task.delay(0.45, function() if self._animTok == tok and self._crisp then self._crisp() end end)
 	else
-		tween(cover, { BackgroundTransparency = 0 }, 0.1)
-		tween(self._scale, { Scale = scaleTo or 0.94 }, 0.2)
-		task.delay(0.1, function()
+		local rest = self._restPos or main.Position
+		self._restPos = rest
+		self._hiding = true
+		-- accent edge flash, then the content is covered while the window drops away
+		st.Thickness = 1.2
+		tween(st, { Thickness = 3, Transparency = 0 }, 0.12)
+		tween(cover, { BackgroundTransparency = 0 }, 0.14)
+		tween(main, { Position = UDim2.new(rest.X.Scale, rest.X.Offset, rest.Y.Scale, rest.Y.Offset + SLIDE) }, 0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+		tween(sc, { Scale = scaleTo or 0.88 }, 0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+		task.delay(0.14, function()
 			if self._animTok ~= tok then return end
-			tween(cover, { BackgroundTransparency = 1 }, 0.1)
-			tween(main, { BackgroundTransparency = 1 }, 0.1)
-			tween(st, { Transparency = 1 }, 0.1)
+			tween(cover, { BackgroundTransparency = 1 }, 0.16)
+			tween(main, { BackgroundTransparency = 1 }, 0.16)
+			tween(st, { Transparency = 1, Thickness = 1.2 }, 0.16)
+		end)
+		task.delay(0.31, function()
+			if self._animTok ~= tok then return end
+			main.Position = rest
+			self._restPos = nil
+			self._hiding = false
 		end)
 	end
 end
@@ -1392,8 +1419,8 @@ function WindowMT:ResetLayout() self._resetLayout() end
 function WindowMT:Destroy()
 	if self._dying then return end
 	self._dying = true
-	self:_animate(false, 0.9)
-	task.delay(0.24, function()
+	self:_animate(false, 0.88)
+	task.delay(0.34, function()
 		for i, w in ipairs(Library.Windows) do if w == self then table.remove(Library.Windows, i) break end end
 		for i, g in ipairs(Library._guis) do if g == self.ScreenGui then table.remove(Library._guis, i) break end end
 		if self.ScreenGui then self.ScreenGui:Destroy() end
